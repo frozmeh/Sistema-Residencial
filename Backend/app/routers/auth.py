@@ -28,9 +28,7 @@ class Credenciales(BaseModel):
 
 @router.post("/login")
 def login(credenciales: Credenciales, db: Session = Depends(get_db)):
-    usuario = (
-        db.query(Usuario).filter(Usuario.nombre == credenciales.nombre_usuario).first()
-    )
+    usuario = db.query(Usuario).filter(Usuario.nombre == credenciales.nombre_usuario).first()
     if not usuario:
         raise HTTPException(status_code=400, detail="Usuario no encontrado")
 

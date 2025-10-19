@@ -1,0 +1,44 @@
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Date,
+    func,
+    Boolean,
+    Enum,
+)
+from ..database import Base
+from sqlalchemy.orm import relationship
+
+
+# ====================
+# ---- Residentes ----
+# ====================
+
+
+class Residente(Base):
+    __tablename__ = "residentes"  # Nombre de la tabla Residentes en la DB
+
+    id = Column(Integer, primary_key=True, index=True)  # PK
+    tipo_residente = Enum("Propietario", "Inquilino", name="tipo_residente_enum")  # Propietario o inquilino
+    nombre = Column(String, nullable=False)  # Nombre del Propietario / Inquilino
+    cedula = Column(String, nullable=False, unique=True)  # Cédula de Identidad
+    telefono = Column(String)  # Teléfono de contacto
+    correo = Column(String)  # Correo electrónico de contacto
+    id_usuario = Column(Integer, ForeignKey("usuarios.id"), unique=True)  # Relación con la tabla Usuario
+    id_apartamento = Column(Integer, ForeignKey("apartamentos.id"), nullable=True)
+    fecha_registro = Column(Date, default=func.current_date(), nullable=False)  # Fecha de registro del residente
+    residente_actual = Column(Boolean, default=True)  # True = residente activo
+    estado = Column(
+        Enum("Activo", "Inactivo", "Suspendido", name="estado_residente_enum"),
+        default="Activo",
+        nullable=False,
+    )
+
+    # Relaciones
+    usuario = relationship("Usuario", back_populates="residente", uselist=False)
+    apartamento = relationship("Apartamento", back_populates="residente", uselist=False)
+    pagos = relationship("Pago", back_populates="residente", cascade="all, delete-orphan")
+    incidencias = relationship("Incidencia", back_populates="residente", cascade="all, delete-orphan")
+    reservas = relationship("Reserva", back_populates="residente", cascade="all, delete-orphan")

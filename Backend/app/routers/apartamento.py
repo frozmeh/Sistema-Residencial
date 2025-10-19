@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..database import get_db
-from typing import Optional
 
 router = APIRouter(prefix="/apartamentos", tags=["Apartamentos"])
 
@@ -26,9 +25,7 @@ def obtener_apartamento(id_apartamento: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{id_apartamento}", response_model=schemas.ApartamentoOut)
-def actualizar_apartamento(
-    id_apartamento: int, datos: schemas.ApartamentoUpdate, db: Session = Depends(get_db)
-):
+def actualizar_apartamento(id_apartamento: int, datos: schemas.ApartamentoUpdate, db: Session = Depends(get_db)):
     apt_actualizado = crud.actualizar_apartamento(db, id_apartamento, datos)
     if not apt_actualizado:
         raise HTTPException(status_code=404, detail="Apartamento no encontrado")
