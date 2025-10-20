@@ -1,0 +1,317 @@
+# CRUD Completo
+
+## crud_apartamento.py
+
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+from .. import models, schemas
+from ..utils.db_helpers import guardar_y_refrescar
+
+# ======================
+# ---- Apartamentos ----
+# ======================
+
+
+def crear_apartamento(db: Session, apt: schemas.ApartamentoCreate):
+    existente = (
+        db.query(models.Apartamento)
+        .filter(models.Apartamento.numero == apt.numero, models.Apartamento.torre == apt.torre)
+        .first()
+    )
+    if existente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya existe un apartamento con número {apt.numero} en la torre {apt.torre}.",
+        )
+    if apt.id_residente:
+        # Verificar que el residente exista
+        residente = db.query(models.Residente).filter(models.Residente.id == apt.id_residente).first()
+        if not residente:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El residente asignado no existe.")
+
+        # Verificar que el residente no esté ya asociado a otro apartamento
+        residente_ocupado = (
+            db.query(models.Apartamento).filter(models.Apartamento.id_residente == apt.id_residente).first()
+        )
+        if residente_ocupado:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="El residente ya está asignado a otro apartamento."
+            )
+
+    nuevo_apt = models.Apartamento(**apt.dict())
+    db.add(nuevo_apt)
+    return guardar_y_refrescar(db, nuevo_apt)
+
+
+def obtener_apartamentos(db: Session):
+    return db.query(models.Apartamento).order_by(models.Apartamento.id.asc()).all()
+
+
+def obtener_apartamento_por_id(db: Session, id_apartamento: int):
+    apt = db.query(models.Apartamento).filter(models.Apartamento.id == id_apartamento).first()
+    if not apt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"No se encontró el apartamento con ID {id_apartamento}"
+        )
+    return apt
+
+
+def actualizar_apartamento(db: Session, id_apartamento: int, datos: schemas.ApartamentoUpdate):
+    apt = obtener_apartamento_por_id(db, id_apartamento)
+
+    if datos.id_residente:
+        residente = db.query(models.Residente).filter(models.Residente.id == datos.id_residente).first()
+        if not residente:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El residente asignado no existe.")
+
+        # Evitar asignar un residente que ya tiene otro apartamento
+        otro_apt = (
+            db.query(models.Apartamento)
+            .filter(models.Apartamento.id_residente == datos.id_residente, models.Apartamento.id != id_apartamento)
+            .first()
+        )
+        if otro_apt:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="El residente ya está asignado a otro apartamento."
+            )
+
+    for key, value in datos.dict(exclude_unset=True).items():
+        setattr(apt, key, value)
+
+    return guardar_y_refrescar(db, apt)
+
+
+def eliminar_apartamento(db: Session, id_apartamento: int):
+    apt = obtener_apartamento_por_id(db, id_apartamento)
+    db.delete(apt)
+    db.commit()
+    return {"mensaje": f"Apartamento con ID {id_apartamento} eliminado correctamente."}
+
+## crud_auditoria.py
+
+from sqlalchemy.orm import Session
+from . import models, schemas
+
+
+# ===================
+# ---- Auditoria ----
+# ===================
+
+
+def crear_auditoria(db: Session, audit: schemas.AuditoriaCreate):
+    nuevo = models.Auditoria(**audit.dict())
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+    return nuevo
+
+
+def obtener_auditorias(db: Session):
+    return db.query(models.Auditoria).all()
+
+## crud_gastos.py
+
+from sqlalchemy.orm import Session
+from fastapi import HTTPException
+from typing import Optional, Type, Any
+from . import models, schemas
+
+# ===============================
+# ---- Funciones genéricas -----
+# ===============================
+
+
+def crear_entidad(db: Session, modelo: Type[Any], datos: Optional[dict] = None):
+    nuevo = modelo(**datos.dict())
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+    return nuevo
+
+
+def obtener_entidades(db: Session, modelo: Type[Any], filtros: Optional[str] = None):
+    query = db.query(modelo)
+    if filtros:
+        for campo, valor in filtros.items():
+            query = query.filter(getattr(modelo, campo) == valor)
+    return query.all()
+
+
+def actualizar_entidad(db: Session, modelo: Type[Any], id_entidad: int, datos_actualizados):
+    entidad = db.query(modelo).filter(modelo.id == id_entidad).first()
+    if not entidad:
+        raise HTTPException(status_code=404, detail=f"{modelo.__tablename__} no encontrado")
+    try:
+        for key, value in datos_actualizados.dict(exclude_unset=True).items():
+            setattr(entidad, key, value)
+        db.commit()
+        db.refresh(entidad)
+        return entidad
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Error al actualizar: {str(e)}")
+
+
+def eliminar_entidad(db: Session, modelo: Type[Any], id_entidad: int):
+    entidad = db.query(modelo).filter(modelo.id == id_entidad).first()
+    if not entidad:
+        raise HTTPException(status_code=404, detail=f"{modelo.__tablename__} no encontrado")
+    try:
+        db.delete(entidad)
+        db.commit()
+        return {"detalle": f"{modelo.__tablename__} con id {id_entidad} eliminado correctamente"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Error al eliminar: {str(e)}")
+
+
+# =======================
+# ---- Gastos Fijos ----
+# ======================
+
+
+def crear_gasto_fijo(db: Session, gasto: schemas.GastoFijoCreate):
+    return crear_entidad(db, models.GastoFijo, gasto)
+
+
+def obtener_gastos_fijos(db: Session, responsable: Optional[str] = None):
+    filtros = {"responsable": responsable} if responsable else None
+    return obtener_entidades(db, models.GastoFijo, filtros)
+
+
+def actualizar_gasto_fijo(db: Session, id_gasto: int, datos_actualizados: schemas.GastoFijoCreate):
+    return actualizar_entidad(db, models.GastoFijo, id_gasto, datos_actualizados)
+
+
+def eliminar_gasto_fijo(db: Session, id_gasto: int):
+    return eliminar_entidad(db, models.GastoFijo, id_gasto)
+
+
+# ==========================
+# ---- Gastos Variables ----
+# ==========================
+
+
+def crear_gasto_variable(db: Session, gasto: schemas.GastoVariableCreate):
+    return crear_entidad(db, models.GastoVariable, gasto)
+
+
+def obtener_gastos_variables(db: Session, responsable: Optional[str] = None):
+    filtros = {"responsable": responsable} if responsable else None
+    return obtener_entidades(db, models.GastoVariable, filtros)
+
+
+def actualizar_gasto_variable(db: Session, id_gasto: int, datos_actualizados: schemas.GastoVariableCreate):
+    return actualizar_entidad(db, models.GastoVariable, id_gasto, datos_actualizados)
+
+
+def eliminar_gasto_variable(db: Session, id_gasto: int):
+    return eliminar_entidad(db, models.GastoVariable, id_gasto)
+
+## crud_incidencias.py
+
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+from . import models, schemas
+from fastapi import HTTPException
+from typing import Optional, List
+from datetime import date
+
+
+# =====================
+# ---- Incidencias ----
+# =====================
+
+
+def crear_incidencia(db: Session, incidencia: schemas.IncidenciaCreate):
+    nuevo = models.Incidencia(**incidencia.dict())
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+    return nuevo
+
+
+def obtener_incidencias(
+    db: Session,
+    estado: Optional[str] = None,
+    prioridad: Optional[str] = None,
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None,
+) -> List[models.Incidencia]:
+    query = db.query(models.Incidencia)
+
+    if estado:
+        query = query.filter(models.Incidencia.estado == estado)
+    if prioridad:
+        query = query.filter(models.Incidencia.prioridad == prioridad)
+    if fecha_inicio and fecha_fin:
+        query = query.filter(
+            and_(
+                models.Incidencia.fecha_reporte >= fecha_inicio,
+                models.Incidencia.fecha_reporte <= fecha_fin,
+            )
+        )
+
+    return query.all()
+
+
+def obtener_incidencia_por_id(db: Session, id_incidencia: int):
+    incidencia = db.query(models.Incidencia).filter(models.Incidencia.id == id_incidencia).first()
+    if not incidencia:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    return incidencia
+
+
+def actualizar_incidencia(db: Session, id_incidencia: int, datos: schemas.IncidenciaUpdate):
+    inc = obtener_incidencia_por_id(db, id_incidencia)
+    for key, value in datos.dict(exclude_unset=True).items():
+        setattr(inc, key, value)
+    db.commit()
+    db.refresh(inc)
+    return inc
+
+
+def eliminar_incidencia(db: Session, id_incidencia: int):
+    inc = obtener_incidencia_por_id(db, id_incidencia)
+    if inc.estado != "Cerrada":
+        raise HTTPException(status_code=400, detail="Solo se pueden eliminar incidencias con estado 'Cerrada'")
+    db.delete(inc)
+    db.commit()
+    return inc
+
+## crud_notificaciones.py
+
+from sqlalchemy.orm import Session
+from . import models, schemas
+
+
+# ========================
+# ---- Notificaciones ----
+# ========================
+
+
+def crear_notificacion(db: Session, noti: schemas.NotificacionCreate):
+    nuevo = models.Notificacion(**noti.dict())
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+    return nuevo
+
+
+def obtener_notificaciones(db: Session):
+    return db.query(models.Notificacion).all()
+
+
+def obtener_notificacion_por_id(db: Session, id_notificacion: int):
+    return db.query(models.Notificacion).filter(models.Notificacion.id == id_notificacion).first()
+
+
+def actualizar_notificacion(db: Session, id_notificacion: int, datos: schemas.NotificacionUpdate):
+    noti = obtener_notificacion_por_id(db, id_notificacion)
+    if not noti:
+        return None
+    for key, value in datos.dict(exclude_unset=True).items():
+        setattr(noti, key, value)
+    db.commit()
+    db.refresh(noti)
+    return noti

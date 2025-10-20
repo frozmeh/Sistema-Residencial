@@ -1,5 +1,6 @@
 from pydantic import (
     BaseModel,
+    field_validator,
 )
 from typing import Optional
 from datetime import date
@@ -10,16 +11,27 @@ from datetime import date
 # ======================
 
 
-class GastoFijoCreate(BaseModel):
-    tipo: str
+class GastoBase(BaseModel):
+    tipo_gasto: str
     monto: float
     descripcion: Optional[str] = None
     responsable: str
+    id_reporte_financiero: Optional[int] = None
+    id_apartamento: Optional[int] = None
+
+    @field_validator("monto")
+    def validar_monto(cls, v):
+        if v <= 0:
+            raise ValueError("El monto debe ser mayor a 0")
+        return v
 
 
-class GastoFijoOut(GastoFijoCreate):
+class GastoFijoCreate(GastoBase): ...
+
+
+class GastoFijoOut(GastoBase):
     id: int
-    fecha_registro: date
+    fecha_creacion: date
 
     class Config:
         from_attributes = True
@@ -30,21 +42,12 @@ class GastoFijoOut(GastoFijoCreate):
 # ==========================
 
 
-class GastoVariableCreate(BaseModel):
-    tipo: str
-    monto: float
-    descripcion: Optional[str] = None
-    responsable: str
+class GastoVariableCreate(GastoBase): ...
 
 
-class GastoVariableOut(GastoVariableCreate):
+class GastoVariableOut(GastoBase):
     id: int
-    fecha_registro: date
+    fecha_creacion: date
 
     class Config:
         from_attributes = True
-
-
-from pydantic import BaseModel
-from typing import Optional
-from datetime import date

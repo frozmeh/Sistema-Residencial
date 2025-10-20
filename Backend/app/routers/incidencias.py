@@ -1,44 +1,75 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import Optional
+from datetime import date
 from .. import schemas, crud
 from ..database import get_db
 
 router = APIRouter(prefix="/incidencias", tags=["Incidencias"])
 
 
-@router.post("/", response_model=schemas.IncidenciaOut)
+# =====================
+# ---- Incidencias ----
+# =====================
+
+
+@router.post(
+    "/",
+    response_model=schemas.IncidenciaOut,
+    summary="Crear una nueva incidencia",
+    description="Permite a un residente crear una incidencia de tipo Mantenimiento, Queja o Sugerencia.",
+)
 def crear_incidencia(
-    incidencia: schemas.IncidenciaCreate, db: Session = Depends(get_db)
+    incidencia: schemas.IncidenciaCreate,
+    db: Session = Depends(get_db),
 ):
     return crud.crear_incidencia(db, incidencia)
 
 
-@router.get("/", response_model=list[schemas.IncidenciaOut])
-def listar_incidencias(db: Session = Depends(get_db)):
-    return crud.obtener_incidencias(db)
-
-
-@router.get("/{id_incidencia}", response_model=schemas.IncidenciaOut)
-def obtener_incidencia(id_incidencia: int, db: Session = Depends(get_db)):
-    inc = crud.obtener_incidencia_por_id(db, id_incidencia)
-    if not inc:
-        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
-    return inc
-
-
-@router.put("/{id_incidencia}", response_model=schemas.IncidenciaOut)
-def actualizar_incidencia(
-    id_incidencia: int, datos: schemas.IncidenciaUpdate, db: Session = Depends(get_db)
+def listar_incidencias(
+    estado: Optional[str] = Query(None, description="Filtrar por estado (Abierta, En progreso, Cerrada)"),
+    prioridad: Optional[str] = Query(None, description="Filtrar por prioridad (Alta, Media, Baja)"),
+    fecha_inicio: Optional[date] = Query(None, description="Filtrar incidencias desde esta fecha"),
+    fecha_fin: Optional[date] = Query(None, description="Filtrar incidencias hasta esta fecha"),
+    db: Session = Depends(get_db),
 ):
-    inc = crud.actualizar_incidencia(db, id_incidencia, datos)
-    if not inc:
-        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
-    return inc
+    return crud.obtener_incidencias(db, estado, prioridad, fecha_inicio, fecha_fin)
 
 
-@router.delete("/{id_incidencia}")
+@router.get(
+    "/{id_incidencia}",
+    response_model=schemas.IncidenciaOut,
+    summary="Obtener una incidencia por ID",
+)
+def obtener_incidencia(id_incidencia: int, db: Session = Depends(get_db)):
+    return crud.obtener_incidencia_por_id(db, id_incidencia)
+
+
+@router.put(
+    "/{id_incidencia}",
+    response_model=schemas.IncidenciaOut,
+    summary="Actualizar una incidencia existente",
+    description="Permite modificar el estado, descripción o prioridad de una incidencia.",
+)
+@router.put(
+    "/{id_incidencia}",
+    response_model=schemas.IncidenciaOut,
+    summary="Actualizar una incidencia existente",
+    description="Permite modificar el estado, descripción o prioridad de una incidencia.",
+)
+def actualizar_incidencia(
+    id_incidencia: int,
+    datos: schemas.IncidenciaUpdate,
+    db: Session = Depends(get_db),
+):
+    return crud.actualizar_incidencia(db, id_incidencia, datos)
+
+
+@router.delete(
+    "/{id_incidencia}",
+    summary="Eliminar una incidencia por ID",
+    description="Elimina una incidencia solo si está en estado 'Cerrada'.",
+)
 def eliminar_incidencia(id_incidencia: int, db: Session = Depends(get_db)):
-    eliminado = crud.eliminar_incidencia(db, id_incidencia)
-    if not eliminado:
-        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    crud.eliminar_incidencia(db, id_incidencia)
     return {"mensaje": "Incidencia eliminada correctamente"}

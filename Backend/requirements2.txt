@@ -1,0 +1,42 @@
+# --- Framework principal ---
+fastapi==0.119.0
+uvicorn==0.37.0
+
+# --- ORM y base de datos ---
+sqlalchemy==2.0.44
+psycopg2-binary
+alembic
+
+# --- Validación y manejo de datos ---
+pydantic==2.12.0
+pydantic_core==2.41.1
+email-validator
+annotated-types==0.7.0
+typing_extensions
+
+# --- Utilidades del sistema ---
+python-dotenv
+python-multipart
+click==8.3.0
+colorama
+greenlet
+anyio
+h11
+idna
+sniffio
+typing_inspection
+
+# --- Seguridad ---
+passlib[bcrypt]
+
+# --- Pruebas ---
+pytest
+
+# --- Opcionales / Mejoras ---
+httpx         # para pruebas HTTP
+loguru        # para logs legibles
+reportlab     # para generar reportes PDF
+pandas        # para reportes o exportaciones
+
+# --- Dependencia DNS (para validación de correos) ---
+dnspython

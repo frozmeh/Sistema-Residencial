@@ -41,9 +41,9 @@ with SessionLocal() as db:
 
 # Incluir routers (más adelante)
 app.include_router(usuarios.router)
+app.include_router(auth.router)
 app.include_router(roles.router)
 app.include_router(residentes.router)
-app.include_router(auth.router)
 app.include_router(apartamento.router)
 app.include_router(pagos.router)
 app.include_router(gastos.router)

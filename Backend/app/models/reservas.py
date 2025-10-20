@@ -5,7 +5,9 @@ from sqlalchemy import (
     ForeignKey,
     Date,
     Time,
+    Enum
 )
+import enum
 from ..database import Base
 from sqlalchemy.orm import relationship
 
@@ -13,6 +15,11 @@ from sqlalchemy.orm import relationship
 # ==================
 # ---- Reservas ----
 # ==================
+
+class EstadoReserva(enum.Enum):
+    Activa = "Activa"
+    Cancelada = "Cancelada"
+    Finalizada = "Finalizada"
 
 
 class Reserva(Base):
@@ -24,8 +31,8 @@ class Reserva(Base):
     fecha_reserva = Column(Date, nullable=False)
     hora_inicio = Column(Time, nullable=False)
     hora_fin = Column(Time, nullable=False)
-    estado = Column(String, default="Activa")
-    numero_personas = Column(Integer)
+    estado = Column(Enum(EstadoReserva), default=EstadoReserva.Activa, nullable=False)
+    numero_personas = Column(Integer, default=1, nullable=False)
     notas = Column(String, nullable=True)
 
     residente = relationship("Residente", back_populates="reservas")

@@ -1,5 +1,9 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from . import models, schemas
+from fastapi import HTTPException
+from typing import Optional, List
+from datetime import date
 
 
 # =====================
@@ -15,18 +19,39 @@ def crear_incidencia(db: Session, incidencia: schemas.IncidenciaCreate):
     return nuevo
 
 
-def obtener_incidencias(db: Session):
-    return db.query(models.Incidencia).all()
+def obtener_incidencias(
+    db: Session,
+    estado: Optional[str] = None,
+    prioridad: Optional[str] = None,
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None,
+) -> List[models.Incidencia]:
+    query = db.query(models.Incidencia)
+
+    if estado:
+        query = query.filter(models.Incidencia.estado == estado)
+    if prioridad:
+        query = query.filter(models.Incidencia.prioridad == prioridad)
+    if fecha_inicio and fecha_fin:
+        query = query.filter(
+            and_(
+                models.Incidencia.fecha_reporte >= fecha_inicio,
+                models.Incidencia.fecha_reporte <= fecha_fin,
+            )
+        )
+
+    return query.all()
 
 
 def obtener_incidencia_por_id(db: Session, id_incidencia: int):
-    return db.query(models.Incidencia).filter(models.Incidencia.id == id_incidencia).first()
+    incidencia = db.query(models.Incidencia).filter(models.Incidencia.id == id_incidencia).first()
+    if not incidencia:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    return incidencia
 
 
 def actualizar_incidencia(db: Session, id_incidencia: int, datos: schemas.IncidenciaUpdate):
     inc = obtener_incidencia_por_id(db, id_incidencia)
-    if not inc:
-        return None
     for key, value in datos.dict(exclude_unset=True).items():
         setattr(inc, key, value)
     db.commit()
@@ -36,7 +61,8 @@ def actualizar_incidencia(db: Session, id_incidencia: int, datos: schemas.Incide
 
 def eliminar_incidencia(db: Session, id_incidencia: int):
     inc = obtener_incidencia_por_id(db, id_incidencia)
-    if inc:
-        db.delete(inc)
-        db.commit()
+    if inc.estado != "Cerrada":
+        raise HTTPException(status_code=400, detail="Solo se pueden eliminar incidencias con estado 'Cerrada'")
+    db.delete(inc)
+    db.commit()
     return inc

@@ -1,8 +1,13 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-
+from ..utils.db_helpers import guardar_y_refrescar
 from .. import models, schemas
+
+
+# ====================
+# ---- Residentes ----
+# ====================
 
 
 def crear_residente(db: Session, residente: schemas.ResidenteCreate):
@@ -35,15 +40,13 @@ def crear_residente(db: Session, residente: schemas.ResidenteCreate):
     nuevo_residente = models.Residente(**residente.dict())
     db.add(nuevo_residente)
     try:
-        db.commit()
-        db.refresh(nuevo_residente)
+        return guardar_y_refrescar(db, nuevo_residente)
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Error de integridad: Verifica que la cédula y el usuario no estén duplicados.",
         )
-    return nuevo_residente
 
 
 def obtener_residentes(db: Session):
@@ -87,16 +90,13 @@ def actualizar_residente(db: Session, id_residente: int, datos_actualizados: sch
         setattr(residente, key, value)
 
     try:
-        db.commit()
-        db.refresh(residente)
+        return guardar_y_refrescar(db, residente)
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Error al actualizar: datos duplicados o conflicto de integridad.",
         )
-
-    return residente
 
 
 def eliminar_residente(db: Session, id_residente: int):
@@ -107,7 +107,6 @@ def eliminar_residente(db: Session, id_residente: int):
 
 
 def asignar_residente_a_apartamento(db: Session, id_residente: int, id_apartamento: int):
-    # Traer residente y apartamento
     residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
     apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == id_apartamento).first()
 
@@ -116,18 +115,20 @@ def asignar_residente_a_apartamento(db: Session, id_residente: int, id_apartamen
     if not apartamento:
         raise HTTPException(status_code=404, detail=f"No se encontró el apartamento con ID {id_apartamento}.")
 
+    if residente.id_apartamento:
+        raise HTTPException(status_code=400, detail="El residente ya tiene un apartamento asignado.")
     if apartamento.estado == "Ocupado":
         raise HTTPException(status_code=400, detail="El apartamento ya está ocupado.")
 
-    # Asignación
     residente.id_apartamento = apartamento.id
     apartamento.estado = "Ocupado"
+    apartamento.id_residente = residente.id  # coherencia bidireccional
 
     db.commit()
     db.refresh(residente)
     db.refresh(apartamento)
 
-    return residente
+    return {"mensaje": f"Residente {residente.nombre} asignado al apartamento {apartamento.numero}."}
 
 
 def desasignar_residente(db: Session, id_residente: int, inactivar: bool = False):
@@ -135,27 +136,23 @@ def desasignar_residente(db: Session, id_residente: int, inactivar: bool = False
     if not residente:
         raise HTTPException(status_code=404, detail="Residente no encontrado.")
 
-    # Liberar apartamento
     if residente.id_apartamento:
         apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
         if apartamento:
             apartamento.estado = "Disponible"
+            apartamento.id_residente = None
         residente.id_apartamento = None
 
-    # Inactivar residente
     if inactivar:
         residente.estado = "Inactivo"
         residente.residente_actual = False
 
     db.commit()
     db.refresh(residente)
-    if residente.id_apartamento is None and "apartamento" in locals() and apartamento:
-        db.refresh(apartamento)
 
     return {
         "mensaje": f"Residente {residente.nombre} desasignado correctamente.",
         "estado": residente.estado,
-        "apartamento": "Liberado" if not residente.id_apartamento else "Asignado",
     }
 
 
