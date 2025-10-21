@@ -3,8 +3,18 @@ import axios from "axios";
 
 export const AuthContext = createContext();
 
+// Función para capitalizar cada palabra
+function capitalizarCadaPalabra(nombre) {
+  if (!nombre) return "";
+  return nombre
+    .split(" ")
+    .map((palabra) => palabra.charAt(0).toUpperCase() + palabra.slice(1))
+    .join(" ");
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // Estado de carga
 
   const login = async (usuario, contrasena) => {
     try {
@@ -13,16 +23,24 @@ export function AuthProvider({ children }) {
         contrasena: contrasena,
       });
 
-      const datos = respuesta.data;
+      const datosUsuario = respuesta.data.usuario; // <-- aquí está el objeto correcto
+
       setUser({
-        id: datos.id,
-        nombre: datos.nombre,
-        rol: datos.rol,
-        correo: datos.correo,
+        id: datosUsuario.id,
+        nombre: capitalizarCadaPalabra(datosUsuario.nombre),
+        rol: datosUsuario.id_rol,
+        correo: datosUsuario.email,
       });
 
-      localStorage.setItem("user", JSON.stringify(datos));
-      return datos;
+      localStorage.setItem("user", JSON.stringify({
+        id: datosUsuario.id,
+        nombre: datosUsuario.nombre,
+        rol: datosUsuario.id_rol,
+        correo: datosUsuario.email,
+        token: respuesta.data.access_token, // opcional, útil para usarlo en axios
+      }));
+
+      return datosUsuario;
     } catch (error) {
       throw error;
     }
@@ -54,10 +72,16 @@ export function AuthProvider({ children }) {
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
+    setLoading(false); // Finalizar carga
   }, []);
 
+  useEffect(() => {
+    console.log("Estado de carga:", loading);
+    console.log("Usuario:", user);
+  }, [loading, user]);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, registrarUsuario }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, registrarUsuario }}>
       {children}
     </AuthContext.Provider>
   );

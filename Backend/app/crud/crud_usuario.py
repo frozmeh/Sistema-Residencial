@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from .. import models, schemas
 from ..utils.seguridad import encriptar_contrasena
@@ -17,9 +18,10 @@ from ..utils.db_helpers import guardar_y_refrescar, obtener_usuario_por_id
 def crear_usuario(db: Session, usuario: schemas.UsuarioCreate):
     validar_usuario(nombre=usuario.nombre, email=usuario.email, password=usuario.password)
 
-    if db.query(models.Usuario).filter(models.Usuario.nombre == usuario.nombre).first():
+    if db.query(models.Usuario).filter(func.lower(models.Usuario.nombre) == usuario.nombre.lower()).first():
         raise HTTPException(status_code=400, detail="El nombre de usuario ya está en uso")
-    if db.query(models.Usuario).filter(models.Usuario.email == usuario.email).first():
+
+    if db.query(models.Usuario).filter(func.lower(models.Usuario.email) == usuario.email.lower()).first():
         raise HTTPException(status_code=400, detail="El correo ya está en uso")
 
     datos_usuario = usuario.dict()

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..database import get_db
 from ..utils.seguridad2 import validar_permiso
+from ..utils.seguridad import get_usuario_actual
 from ..models import Usuario
 
 

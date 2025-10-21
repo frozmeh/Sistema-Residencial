@@ -1,9 +1,26 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from sqlalchemy import func
 from ..database import get_db
 from ..models import Usuario  # Ajusta el import según tu estructura
 from passlib.context import CryptContext
+from jose import jwt
+
+
+SECRET_KEY = "Santiago.02"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+
+def crear_token(data: dict, expira_en_minutos: int = ACCESS_TOKEN_EXPIRE_MINUTES):
+    to_encode = data.copy()
+    expiracion = datetime.utcnow() + timedelta(minutes=expira_en_minutos)
+    to_encode.update({"exp": expiracion})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -28,16 +45,18 @@ class Credenciales(BaseModel):
 
 @router.post("/login")
 def login(credenciales: Credenciales, db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.nombre == credenciales.nombre_usuario).first()
+    usuario = db.query(Usuario).filter(func.lower(Usuario.nombre) == credenciales.nombre_usuario.lower()).first()
     if not usuario:
         raise HTTPException(status_code=400, detail="Usuario no encontrado")
 
     if not verificar_contrasena(credenciales.contrasena, usuario.password):
         raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
+    # Crear token JWT
+    token = crear_token({"sub": str(usuario.id), "rol": usuario.id_rol})
+
     return {
-        "id": usuario.id,
-        "nombre": usuario.nombre,
-        "rol": usuario.id_rol,
-        "correo": usuario.email,
+        "access_token": token,
+        "token_type": "bearer",
+        "usuario": {"id": usuario.id, "nombre": usuario.nombre, "rol": usuario.id_rol, "correo": usuario.email},
     }
