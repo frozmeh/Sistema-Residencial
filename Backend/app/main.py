@@ -5,10 +5,10 @@ from .database import engine, Base, SessionLocal
 # Importar routers (más adelante)
 from .routers import (
     roles,
+    torres,
     usuarios,
     residentes,
     auth,
-    apartamento,
     pagos,
     gastos,
     incidencias,
@@ -16,8 +16,12 @@ from .routers import (
     notificaciones,
     auditoria,
     reporte_financiero,
+    test_seguridad,
+    test_admin,
 )
 from .crud import inicializar_roles
+
+# from . import initial_data
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -28,7 +32,7 @@ app = FastAPI(
 # Permitir peticiones desde el frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,15 +40,22 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)  # Crear tablas en la base de datos
 
-with SessionLocal() as db:
-    inicializar_roles(db)  # Inicializar roles fijos
+
+@app.on_event("startup")
+def startup_event():
+    with SessionLocal() as db:
+        inicializar_roles(db)  # Inicializar roles fijos
+        # initial_data.inicializar_db(db)  # Inicializar datos básicos
+
 
 # Incluir routers (más adelante)
 app.include_router(usuarios.router)
+app.include_router(test_seguridad.router)
+app.include_router(test_admin.router)
 app.include_router(auth.router)
 app.include_router(roles.router)
 app.include_router(residentes.router)
-app.include_router(apartamento.router)
+app.include_router(torres.router)
 app.include_router(pagos.router)
 app.include_router(gastos.router)
 app.include_router(incidencias.router)

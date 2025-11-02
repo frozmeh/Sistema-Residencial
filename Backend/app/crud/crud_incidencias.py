@@ -4,6 +4,7 @@ from . import models, schemas
 from fastapi import HTTPException
 from typing import Optional, List
 from datetime import date
+from ..utils.auditoria_decorator import auditar_completo
 
 
 # =====================
@@ -11,6 +12,7 @@ from datetime import date
 # =====================
 
 
+@auditar_completo("incidencias")
 def crear_incidencia(db: Session, incidencia: schemas.IncidenciaCreate):
     nuevo = models.Incidencia(**incidencia.dict())
     db.add(nuevo)
@@ -19,6 +21,7 @@ def crear_incidencia(db: Session, incidencia: schemas.IncidenciaCreate):
     return nuevo
 
 
+@auditar_completo("incidencias")
 def obtener_incidencias(
     db: Session,
     estado: Optional[str] = None,
@@ -43,6 +46,7 @@ def obtener_incidencias(
     return query.all()
 
 
+@auditar_completo("incidencias")
 def obtener_incidencia_por_id(db: Session, id_incidencia: int):
     incidencia = db.query(models.Incidencia).filter(models.Incidencia.id == id_incidencia).first()
     if not incidencia:
@@ -50,6 +54,7 @@ def obtener_incidencia_por_id(db: Session, id_incidencia: int):
     return incidencia
 
 
+@auditar_completo("incidencias")
 def actualizar_incidencia(db: Session, id_incidencia: int, datos: schemas.IncidenciaUpdate):
     inc = obtener_incidencia_por_id(db, id_incidencia)
     for key, value in datos.dict(exclude_unset=True).items():
@@ -59,6 +64,7 @@ def actualizar_incidencia(db: Session, id_incidencia: int, datos: schemas.Incide
     return inc
 
 
+@auditar_completo("incidencias")
 def eliminar_incidencia(db: Session, id_incidencia: int):
     inc = obtener_incidencia_por_id(db, id_incidencia)
     if inc.estado != "Cerrada":

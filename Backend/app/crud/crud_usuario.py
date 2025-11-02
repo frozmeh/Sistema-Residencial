@@ -8,6 +8,7 @@ from .. import models, schemas
 from ..utils.seguridad import encriptar_contrasena
 from ..utils.validaciones import validar_usuario, validar_contrasena
 from ..utils.db_helpers import guardar_y_refrescar, obtener_usuario_por_id
+from ..utils.auditoria_decorator import auditar_completo
 
 
 # ==================
@@ -15,6 +16,7 @@ from ..utils.db_helpers import guardar_y_refrescar, obtener_usuario_por_id
 # ==================
 
 
+# @auditar_completo("usuarios")
 def crear_usuario(db: Session, usuario: schemas.UsuarioCreate):
     validar_usuario(nombre=usuario.nombre, email=usuario.email, password=usuario.password)
 
@@ -32,6 +34,7 @@ def crear_usuario(db: Session, usuario: schemas.UsuarioCreate):
     return db_usuario
 
 
+# @auditar_completo("usuarios")
 def actualizar_usuario(
     db: Session,
     id_usuario: int,
@@ -50,6 +53,7 @@ def actualizar_usuario(
     return usuario
 
 
+# @auditar_completo("usuarios")
 def cambiar_password(db: Session, id_usuario: int, nueva_password: str):
     usuario = obtener_usuario_por_id(db, id_usuario)
 
@@ -64,6 +68,7 @@ def cambiar_password(db: Session, id_usuario: int, nueva_password: str):
     }
 
 
+# @auditar_completo("usuarios")
 def actualizar_ultima_sesion(db: Session, id_usuario: int):
     usuario = obtener_usuario_por_id(db, id_usuario)
     usuario.ultima_sesion = datetime.utcnow()
@@ -71,6 +76,7 @@ def actualizar_ultima_sesion(db: Session, id_usuario: int):
     return usuario
 
 
+# @auditar_completo("usuarios")
 def cambiar_rol_usuario(db: Session, id_usuario: int, nuevo_id_rol: int):
     usuario = obtener_usuario_por_id(db, id_usuario)
 
@@ -79,6 +85,7 @@ def cambiar_rol_usuario(db: Session, id_usuario: int, nuevo_id_rol: int):
     return usuario
 
 
+# @auditar_completo("usuarios")
 def desactivar_usuario(db: Session, id_usuario: int):
     usuario = obtener_usuario_por_id(db, id_usuario)
 
@@ -87,5 +94,6 @@ def desactivar_usuario(db: Session, id_usuario: int):
     return usuario
 
 
+# @auditar_completo("usuarios")
 def obtener_usuarios(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Usuario).offset(skip).limit(limit).all()

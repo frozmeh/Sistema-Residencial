@@ -21,5 +21,4 @@ class Rol(Base):
     permisos = Column(JSON, nullable=False)  # Acciones por módulo
     descripcion = Column(String, nullable=True)
 
-    # Relaciones
     usuarios = relationship("Usuario", back_populates="rol")

@@ -24,13 +24,11 @@ class Residente(Base):
     id_apartamento = Column(Integer, ForeignKey("apartamentos.id"), nullable=True)
     id_usuario = Column(Integer, ForeignKey("usuarios.id"), unique=True)  # Relación con la tabla Usuario
 
-    tipo_residente = Column(
-        Enum("Propietario", "Inquilino", name="tipo_residente_enum"), nullable=False
-    )  # Propietario o inquilino
+    tipo_residente = Column(Enum("Propietario", "Inquilino", name="tipo_residente_enum"), nullable=False)
     nombre = Column(String, nullable=False)  # Nombre del Propietario / Inquilino
-    cedula = Column(String, nullable=False, unique=True)  # Cédula de Identidad
-    telefono = Column(String)  # Teléfono de contacto
-    correo = Column(String)  # Correo electrónico de contacto
+    cedula = Column(String, nullable=False, unique=True)
+    telefono = Column(String)
+    correo = Column(String)
     fecha_registro = Column(Date, default=func.current_date(), nullable=False)  # Fecha de registro del residente
     residente_actual = Column(Boolean, default=True)  # True = residente activo
     estado = Column(
@@ -39,10 +37,10 @@ class Residente(Base):
         nullable=False,
     )
 
-    # Relaciones
     usuario = relationship("Usuario", back_populates="residente", uselist=False)
     apartamento = relationship("Apartamento", back_populates="residente", uselist=False)
     pagos = relationship("Pago", back_populates="residente", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="residente", cascade="all, delete-orphan")
     reservas = relationship("Reserva", back_populates="residente", cascade="all, delete-orphan")
     gastos_variables = relationship("GastoVariable", back_populates="residente")
+    # historiales = relationship("HistorialApartamento", back_populates="residente", cascade="all, delete-orphan")

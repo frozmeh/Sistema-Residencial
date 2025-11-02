@@ -51,12 +51,6 @@ def obtener_incidencia(id_incidencia: int, db: Session = Depends(get_db)):
     summary="Actualizar una incidencia existente",
     description="Permite modificar el estado, descripción o prioridad de una incidencia.",
 )
-@router.put(
-    "/{id_incidencia}",
-    response_model=schemas.IncidenciaOut,
-    summary="Actualizar una incidencia existente",
-    description="Permite modificar el estado, descripción o prioridad de una incidencia.",
-)
 def actualizar_incidencia(
     id_incidencia: int,
     datos: schemas.IncidenciaUpdate,

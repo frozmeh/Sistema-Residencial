@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from ..utils.db_helpers import guardar_y_refrescar
 from .. import models, schemas
+from ..utils.auditoria_decorator import auditar_completo
 
 
 # ====================
@@ -10,6 +11,48 @@ from .. import models, schemas
 # ====================
 
 
+def crear_residente(db: Session, datos: schemas.ResidenteCreate):
+    # Buscar torre
+    torre = db.query(models.Torre).filter(models.Torre.nombre == datos.torre.title().replace("-", " ")).first()
+    if not torre:
+        raise HTTPException(status_code=404, detail=f"Torre '{datos.torre}' no encontrada")
+
+    # Buscar piso dentro de la torre
+    piso = db.query(models.Piso).filter(models.Piso.id_torre == torre.id, models.Piso.numero == datos.piso).first()
+    if not piso:
+        raise HTTPException(status_code=404, detail=f"Piso {datos.piso} no encontrado en {torre.nombre}")
+
+    # Buscar apartamento dentro del piso
+    apartamento = (
+        db.query(models.Apartamento)
+        .filter(models.Apartamento.id_piso == piso.id, models.Apartamento.numero == datos.numero_apartamento)
+        .first()
+    )
+    if not apartamento:
+        raise HTTPException(status_code=404, detail=f"Apartamento {datos.numero_apartamento} no encontrado")
+
+    # Verificar si está ocupado
+    if apartamento.estado == "Ocupado":
+        raise HTTPException(status_code=400, detail="El apartamento ya está ocupado")
+
+    # Crear residente
+    nuevo_residente = models.Residente(
+        tipo_residente=datos.tipo_residente,
+        nombre=datos.nombre,
+        cedula=datos.cedula,
+        id_apartamento=apartamento.id,
+        correo=datos.correo,
+        telefono=datos.telefono,
+    )
+
+    apartamento.estado = "Ocupado"
+    db.add(nuevo_residente)
+    db.commit()
+    db.refresh(nuevo_residente)
+    return nuevo_residente
+
+
+"""@auditar_completo("residentes")
 def crear_residente(db: Session, residente: schemas.ResidenteCreate):
     # Verificar si el usuario ya tiene un residente asignado
     existente = db.query(models.Residente).filter(models.Residente.id_usuario == residente.id_usuario).first()
@@ -47,12 +90,15 @@ def crear_residente(db: Session, residente: schemas.ResidenteCreate):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Error de integridad: Verifica que la cédula y el usuario no estén duplicados.",
         )
+"""
 
 
+# @auditar_completo("residentes")
 def obtener_residentes(db: Session):
     return db.query(models.Residente).order_by(models.Residente.id.asc()).all()
 
 
+# @auditar_completo("residentes")
 def obtener_residente_por_id(db: Session, id_residente: int):
     residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
     if not residente:
@@ -63,6 +109,7 @@ def obtener_residente_por_id(db: Session, id_residente: int):
     return residente
 
 
+@auditar_completo("residentes")
 def actualizar_residente(db: Session, id_residente: int, datos_actualizados: schemas.ResidenteUpdate):
     residente = obtener_residente_por_id(db, id_residente)
 
@@ -99,6 +146,7 @@ def actualizar_residente(db: Session, id_residente: int, datos_actualizados: sch
         )
 
 
+@auditar_completo("residentes")
 def eliminar_residente(db: Session, id_residente: int):
     residente = obtener_residente_por_id(db, id_residente)
     db.delete(residente)
@@ -106,6 +154,7 @@ def eliminar_residente(db: Session, id_residente: int):
     return {"mensaje": f"Residente con ID {id_residente} eliminado correctamente."}
 
 
+@auditar_completo("residentes")
 def asignar_residente_a_apartamento(db: Session, id_residente: int, id_apartamento: int):
     residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
     apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == id_apartamento).first()
@@ -131,6 +180,7 @@ def asignar_residente_a_apartamento(db: Session, id_residente: int, id_apartamen
     return {"mensaje": f"Residente {residente.nombre} asignado al apartamento {apartamento.numero}."}
 
 
+@auditar_completo("residentes")
 def desasignar_residente(db: Session, id_residente: int, inactivar: bool = False):
     residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
     if not residente:
@@ -156,6 +206,7 @@ def desasignar_residente(db: Session, id_residente: int, inactivar: bool = False
     }
 
 
+@auditar_completo("residentes")
 def activar_residente(db: Session, id_residente: int):
     residente = obtener_residente_por_id(db, id_residente)
 

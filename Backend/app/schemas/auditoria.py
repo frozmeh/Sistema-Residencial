@@ -2,7 +2,7 @@ from pydantic import (
     BaseModel,
 )
 from typing import Optional
-from datetime import date
+from datetime import datetime
 
 
 # ===================
@@ -19,7 +19,7 @@ class AuditoriaCreate(BaseModel):
 
 class AuditoriaOut(AuditoriaCreate):
     id: int
-    fecha: date
+    fecha: datetime  # fecha y hora exacta
 
     class Config:
         from_attributes = True

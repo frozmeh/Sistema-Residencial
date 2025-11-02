@@ -2,7 +2,8 @@ from pydantic import (
     BaseModel,
 )
 from typing import Optional
-from datetime import date
+from datetime import datetime
+from enum import Enum
 
 
 # ========================
@@ -10,19 +11,34 @@ from datetime import date
 # ========================
 
 
-class NotificacionCreate(BaseModel):
+class TipoNotificacionEnum(str, Enum):
+    PAGO = "Pago"
+    INCIDENCIA = "Incidencia"
+    SISTEMA = "Sistema"
+    DOCUMENTO = "Documento"
+    RESERVA = "Reserva"
+
+
+class NotificacionBase(BaseModel):
     id_usuario: int
     mensaje: str
-    tipo: Optional[str] = "Sistema"
+    tipo: Optional[TipoNotificacionEnum] = TipoNotificacionEnum.SISTEMA
+    url: Optional[str] = None
+    prioridad: Optional[str] = "Media"
+
+
+class NotificacionCreate(NotificacionBase):
+    pass  # No necesitas agregar nada extra
 
 
 class NotificacionUpdate(BaseModel):
-    leido: Optional[bool]
+    leido: Optional[bool] = None
+    fecha_leido: Optional[datetime] = None
 
 
-class NotificacionOut(NotificacionCreate):
+class NotificacionOut(NotificacionBase):
     id: int
-    fecha_envio: date
+    fecha_envio: datetime
     leido: bool
 
     class Config:

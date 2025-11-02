@@ -10,8 +10,14 @@ router = APIRouter(prefix="/residentes", tags=["Residentes"])
 
 @router.post("/", response_model=schemas.ResidenteOut)
 def crear_residente(residente: schemas.ResidenteCreate, db: Session = Depends(get_db)):
+    return crud.crear_residente(db, residente)
+
+
+"""@router.post("/", response_model=schemas.ResidenteOut)
+def crear_residente(residente: schemas.ResidenteCreate, db: Session = Depends(get_db)):
     nuevo_residente = crud.crear_residente(db, residente)
     return {"mensaje": "Residente creado correctamente", "residente": nuevo_residente}
+"""
 
 
 # > Obtener todos los residentes <

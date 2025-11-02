@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from typing import Optional, Type, Any
 from . import models, schemas
+from ..utils.auditoria_decorator import auditar_completo
 
 # ===============================
 # ---- Funciones genéricas -----
@@ -57,19 +58,23 @@ def eliminar_entidad(db: Session, modelo: Type[Any], id_entidad: int):
 # ======================
 
 
+@auditar_completo("gastos_fijos")
 def crear_gasto_fijo(db: Session, gasto: schemas.GastoFijoCreate):
     return crear_entidad(db, models.GastoFijo, gasto)
 
 
+@auditar_completo("gastos_fijos")
 def obtener_gastos_fijos(db: Session, responsable: Optional[str] = None):
     filtros = {"responsable": responsable} if responsable else None
     return obtener_entidades(db, models.GastoFijo, filtros)
 
 
+@auditar_completo("gastos_fijos")
 def actualizar_gasto_fijo(db: Session, id_gasto: int, datos_actualizados: schemas.GastoFijoCreate):
     return actualizar_entidad(db, models.GastoFijo, id_gasto, datos_actualizados)
 
 
+@auditar_completo("gastos_fijos")
 def eliminar_gasto_fijo(db: Session, id_gasto: int):
     return eliminar_entidad(db, models.GastoFijo, id_gasto)
 
@@ -79,18 +84,22 @@ def eliminar_gasto_fijo(db: Session, id_gasto: int):
 # ==========================
 
 
+@auditar_completo("gastos_variables")
 def crear_gasto_variable(db: Session, gasto: schemas.GastoVariableCreate):
     return crear_entidad(db, models.GastoVariable, gasto)
 
 
+@auditar_completo("gastos_variables")
 def obtener_gastos_variables(db: Session, responsable: Optional[str] = None):
     filtros = {"responsable": responsable} if responsable else None
     return obtener_entidades(db, models.GastoVariable, filtros)
 
 
+@auditar_completo("gastos_variables")
 def actualizar_gasto_variable(db: Session, id_gasto: int, datos_actualizados: schemas.GastoVariableCreate):
     return actualizar_entidad(db, models.GastoVariable, id_gasto, datos_actualizados)
 
 
+@auditar_completo("gastos_variables")
 def eliminar_gasto_variable(db: Session, id_gasto: int):
     return eliminar_entidad(db, models.GastoVariable, id_gasto)

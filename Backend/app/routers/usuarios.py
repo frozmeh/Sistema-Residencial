@@ -2,9 +2,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..database import get_db
-from ..utils.seguridad2 import validar_permiso
-from ..utils.seguridad import get_usuario_actual
-from ..models import Usuario
 
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
@@ -41,7 +38,7 @@ def listar_usuarios(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
 
 @router.put("/ultima_sesion/{id_usuario}", response_model=schemas.UsuarioOut)
 def actualizar_sesion(id_usuario: int, db: Session = Depends(get_db)):
-    crud.actualizar_ultima_sesion(db, id_usuario)
+    return crud.actualizar_ultima_sesion(db, id_usuario)
 
 
 @router.put("/{id_usuario}/desactivar", response_model=UsuarioMensajeOut)

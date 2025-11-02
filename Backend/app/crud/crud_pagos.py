@@ -3,12 +3,15 @@ from . import models, schemas
 from fastapi import HTTPException, status
 from . import models, schemas
 from ..utils.db_helpers import guardar_y_refrescar
+from ..utils.auditoria_decorator import auditar_completo
+
 
 # ===============
 # ---- Pagos ----
 # ===============
 
 
+@auditar_completo("pagos")
 def crear_pago(db: Session, pago: schemas.PagoCreate):
     # Validar residente existente y activo
     residente = db.query(models.Residente).filter(models.Residente.id == pago.id_residente).first()
@@ -24,10 +27,12 @@ def crear_pago(db: Session, pago: schemas.PagoCreate):
     return guardar_y_refrescar(db, nuevo_pago)
 
 
+@auditar_completo("pagos")
 def obtener_pagos(db: Session):
     return db.query(models.Pago).all()
 
 
+@auditar_completo("pagos")
 def obtener_pago_por_id(db: Session, id_pago: int):
     pago = db.query(models.Pago).filter(models.Pago.id == id_pago).first()
     if not pago:
@@ -35,6 +40,7 @@ def obtener_pago_por_id(db: Session, id_pago: int):
     return pago
 
 
+@auditar_completo("pagos")
 def actualizar_pago(db: Session, id_pago: int, datos_actualizados: schemas.PagoUpdate):
     pago = obtener_pago_por_id(db, id_pago)
 
@@ -53,6 +59,7 @@ def actualizar_pago(db: Session, id_pago: int, datos_actualizados: schemas.PagoU
     return guardar_y_refrescar(db, pago)
 
 
+@auditar_completo("pagos")
 def eliminar_pago(db: Session, id_pago: int):
     pago = obtener_pago_por_id(db, id_pago)
     db.delete(pago)

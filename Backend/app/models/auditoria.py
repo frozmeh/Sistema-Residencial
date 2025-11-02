@@ -3,7 +3,7 @@ from sqlalchemy import (
     Integer,
     String,
     ForeignKey,
-    Date,
+    DateTime,
     func,
 )
 from ..database import Base
@@ -20,9 +20,9 @@ class Auditoria(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     id_usuario = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    accion = Column(String, nullable=False)
-    tabla_afectada = Column(String)
-    fecha = Column(Date, default=func.current_date())
-    detalle = Column(String, nullable=True)
+    accion = Column(String(50), nullable=False)
+    tabla_afectada = Column(String(50), nullable=True)
+    fecha = Column(DateTime, default=func.now())  # Fecha y hora exacta
+    detalle = Column(String(255), nullable=True)
 
     usuario = relationship("Usuario", back_populates="auditorias")
