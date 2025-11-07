@@ -1,9 +1,45 @@
+# crud/residentes.py (versión mejorada)
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import IntegrityError
+
 from ..utils.db_helpers import guardar_y_refrescar
 from .. import models, schemas
-from ..utils.auditoria_decorator import auditar_completo
+
+
+# =================
+# ---- Helpers ----
+# =================
+
+
+def get_residente_or_404(db: Session, id_residente: int):
+    residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
+    if not residente:
+        raise HTTPException(status_code=404, detail="Residente no encontrado.")
+    return residente
+
+
+def validar_unicidad_residente(db: Session, cedula: str = None, correo: str = None, exclude_id: int = None):
+    if cedula:
+        existe_cedula = (
+            db.query(models.Residente)
+            .filter(func.lower(models.Residente.cedula) == cedula.lower())
+            .filter(models.Residente.id != exclude_id if exclude_id else True)
+            .first()
+        )
+        if existe_cedula:
+            raise HTTPException(status_code=400, detail=f"La cédula {cedula} ya está registrada.")
+
+    if correo:
+        existe_correo = (
+            db.query(models.Residente)
+            .filter(func.lower(models.Residente.correo) == correo.lower())
+            .filter(models.Residente.id != exclude_id if exclude_id else True)
+            .first()
+        )
+        if existe_correo:
+            raise HTTPException(status_code=400, detail=f"El correo {correo} ya está registrado.")
 
 
 # ====================
@@ -11,128 +47,109 @@ from ..utils.auditoria_decorator import auditar_completo
 # ====================
 
 
-def crear_residente(db: Session, datos: schemas.ResidenteCreate):
-    # Buscar torre
-    torre = db.query(models.Torre).filter(models.Torre.nombre == datos.torre.title().replace("-", " ")).first()
+def crear_residente(db: Session, datos: schemas.ResidenteCreate, id_usuario: int):
+    # Normalizar entradas
+    torre_nombre = datos.torre.strip() if datos.torre else ""
+    numero_apto = str(datos.numero_apartamento).strip()
+    cedula_norm = datos.cedula.strip()
+    correo_norm = datos.correo.strip().lower() if datos.correo else None
+
+    # Buscar torre -> piso -> apartamento (usar ilike / func.lower para evitar mayúsc/minúsc)
+    torre = db.query(models.Torre).filter(func.lower(models.Torre.nombre) == torre_nombre.lower()).first()
     if not torre:
         raise HTTPException(status_code=404, detail=f"Torre '{datos.torre}' no encontrada")
 
-    # Buscar piso dentro de la torre
     piso = db.query(models.Piso).filter(models.Piso.id_torre == torre.id, models.Piso.numero == datos.piso).first()
     if not piso:
         raise HTTPException(status_code=404, detail=f"Piso {datos.piso} no encontrado en {torre.nombre}")
 
-    # Buscar apartamento dentro del piso
     apartamento = (
         db.query(models.Apartamento)
-        .filter(models.Apartamento.id_piso == piso.id, models.Apartamento.numero == datos.numero_apartamento)
+        .filter(models.Apartamento.id_piso == piso.id, func.lower(models.Apartamento.numero) == numero_apto.lower())
         .first()
     )
     if not apartamento:
         raise HTTPException(status_code=404, detail=f"Apartamento {datos.numero_apartamento} no encontrado")
 
-    # Verificar si está ocupado
-    if apartamento.estado == "Ocupado":
-        raise HTTPException(status_code=400, detail="El apartamento ya está ocupado")
+    validar_unicidad_residente(db, cedula_norm, correo_norm)
 
-    # Crear residente
+    # Validar que el usuario no tenga ya un residente asociado
+    if db.query(models.Residente).filter(models.Residente.id_usuario == id_usuario).first():
+        raise HTTPException(status_code=400, detail="El usuario ya tiene un residente asociado.")
+
+    # Crear residente pendiente (no ocupamos el apto todavía)
     nuevo_residente = models.Residente(
+        id_usuario=id_usuario,
         tipo_residente=datos.tipo_residente,
-        nombre=datos.nombre,
-        cedula=datos.cedula,
+        nombre=datos.nombre.strip(),
+        cedula=cedula_norm,
+        correo=correo_norm,
+        telefono=datos.telefono.strip() if datos.telefono else None,
         id_apartamento=apartamento.id,
-        correo=datos.correo,
-        telefono=datos.telefono,
+        estado="Activo",  # o "Pendiente" si prefieres
+        validado=False,
+        residente_actual=False,
     )
 
-    apartamento.estado = "Ocupado"
-    db.add(nuevo_residente)
-    db.commit()
-    db.refresh(nuevo_residente)
-    return nuevo_residente
-
-
-"""@auditar_completo("residentes")
-def crear_residente(db: Session, residente: schemas.ResidenteCreate):
-    # Verificar si el usuario ya tiene un residente asignado
-    existente = db.query(models.Residente).filter(models.Residente.id_usuario == residente.id_usuario).first()
-    if existente:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El usuario con ID {residente.id_usuario} ya está asociado a otro residente.",
-        )
-
-    # Validar cédula única
-    existente_cedula = db.query(models.Residente).filter(models.Residente.cedula == residente.cedula).first()
-    if existente_cedula:
-        raise HTTPException(
-            status_code=400,
-            detail=f"La cédula {residente.cedula} ya está registrada.",
-        )
-
-    # Validar correo único si se proporciona
-    if residente.correo:
-        existente_correo = db.query(models.Residente).filter(models.Residente.correo == residente.correo).first()
-        if existente_correo:
-            raise HTTPException(
-                status_code=400,
-                detail=f"El correo {residente.correo} ya está registrado.",
-            )
-
-    # Crear residente
-    nuevo_residente = models.Residente(**residente.dict())
-    db.add(nuevo_residente)
     try:
-        return guardar_y_refrescar(db, nuevo_residente)
+        db.add(nuevo_residente)
+        guardar_y_refrescar(db, nuevo_residente)
+        return nuevo_residente
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error de integridad: Verifica que la cédula y el usuario no estén duplicados.",
-        )
-"""
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad: posible duplicado.")
 
 
-# @auditar_completo("residentes")
+def aprobar_residente(db: Session, id_residente: int):
+    residente = get_residente_or_404(db, id_residente)
+
+    apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
+    if not apartamento:
+        raise HTTPException(status_code=404, detail="Apartamento asociado no encontrado.")
+
+    if apartamento.estado.lower() == "ocupado":
+        raise HTTPException(status_code=400, detail="El apartamento ya está ocupado por otro residente.")
+
+    # Intentar aprobar y ocupar apartamento en una transacción
+    try:
+        residente.validado = True
+        residente.residente_actual = True
+        residente.estado = "Activo"
+        apartamento.estado = "Ocupado"
+        db.commit()
+        db.refresh(residente)
+        return {"mensaje": f"Residente {residente.nombre} validado y asignado correctamente.", "residente": residente}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Error al aprobar residente. Intenta de nuevo.")
+
+
+def rechazar_residente(db: Session, id_residente: int, motivo: str = "Registro rechazado por el administrador."):
+    residente = get_residente_or_404(db, id_residente)
+
+    residente.validado = False
+    residente.estado = "Inactivo"
+    residente.residente_actual = False
+
+    db.commit()
+    return {"mensaje": motivo}
+
+
 def obtener_residentes(db: Session):
     return db.query(models.Residente).order_by(models.Residente.id.asc()).all()
 
 
-# @auditar_completo("residentes")
 def obtener_residente_por_id(db: Session, id_residente: int):
-    residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
-    if not residente:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró un residente con ID {id_residente}.",
-        )
+    residente = get_residente_or_404(db, id_residente)
     return residente
 
 
-@auditar_completo("residentes")
-def actualizar_residente(db: Session, id_residente: int, datos_actualizados: schemas.ResidenteUpdate):
+def actualizar_residente(db: Session, id_residente: int, datos_actualizados: schemas.ResidenteUpdateResidente):
     residente = obtener_residente_por_id(db, id_residente)
-
-    # Validaciones para cédula y correo únicos
     update_data = datos_actualizados.dict(exclude_unset=True)
-    if "cedula" in update_data:
-        existente_cedula = (
-            db.query(models.Residente)
-            .filter(models.Residente.cedula == update_data["cedula"], models.Residente.id != id_residente)
-            .first()
-        )
-        if existente_cedula:
-            raise HTTPException(status_code=400, detail=f"La cédula {update_data['cedula']} ya está registrada.")
-    if "correo" in update_data:
-        existente_correo = (
-            db.query(models.Residente)
-            .filter(models.Residente.correo == update_data["correo"], models.Residente.id != id_residente)
-            .first()
-        )
-        if existente_correo:
-            raise HTTPException(status_code=400, detail=f"El correo {update_data['correo']} ya está registrado.")
 
-    # Actualizar campos
+    validar_unicidad_residente(db, update_data.get("cedula"), update_data.get("correo"), id_residente)
+
     for key, value in update_data.items():
         setattr(residente, key, value)
 
@@ -146,74 +163,172 @@ def actualizar_residente(db: Session, id_residente: int, datos_actualizados: sch
         )
 
 
-@auditar_completo("residentes")
 def eliminar_residente(db: Session, id_residente: int):
     residente = obtener_residente_por_id(db, id_residente)
+
+    # Liberar apartamento si existe
+    if residente.id_apartamento:
+        apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
+        if apartamento:
+            apartamento.estado = "Disponible"
+            # si existe id_residente en la tabla apartamento, limpiarlo
+            if hasattr(apartamento, "id_residente"):
+                apartamento.id_residente = None
+
     db.delete(residente)
     db.commit()
     return {"mensaje": f"Residente con ID {id_residente} eliminado correctamente."}
 
 
-@auditar_completo("residentes")
 def asignar_residente_a_apartamento(db: Session, id_residente: int, id_apartamento: int):
-    residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
-    apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == id_apartamento).first()
+    residente = get_residente_or_404(db, id_residente)
 
-    if not residente:
-        raise HTTPException(status_code=404, detail=f"No se encontró el residente con ID {id_residente}.")
+    apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == id_apartamento).first()
     if not apartamento:
-        raise HTTPException(status_code=404, detail=f"No se encontró el apartamento con ID {id_apartamento}.")
+        raise HTTPException(status_code=404, detail="Apartamento no encontrado.")
 
     if residente.id_apartamento:
         raise HTTPException(status_code=400, detail="El residente ya tiene un apartamento asignado.")
-    if apartamento.estado == "Ocupado":
+    if apartamento.estado.lower() == "ocupado":
         raise HTTPException(status_code=400, detail="El apartamento ya está ocupado.")
 
     residente.id_apartamento = apartamento.id
     apartamento.estado = "Ocupado"
-    apartamento.id_residente = residente.id  # coherencia bidireccional
+    if hasattr(apartamento, "id_residente"):
+        apartamento.id_residente = residente.id
 
     db.commit()
     db.refresh(residente)
     db.refresh(apartamento)
+    return {
+        "mensaje": f"Residente {residente.nombre} asignado al apartamento {apartamento.numero}.",
+        "residente": residente,
+    }
 
-    return {"mensaje": f"Residente {residente.nombre} asignado al apartamento {apartamento.numero}."}
 
-
-@auditar_completo("residentes")
 def desasignar_residente(db: Session, id_residente: int, inactivar: bool = False):
-    residente = db.query(models.Residente).filter(models.Residente.id == id_residente).first()
-    if not residente:
-        raise HTTPException(status_code=404, detail="Residente no encontrado.")
+    residente = get_residente_or_404(db, id_residente)
 
     if residente.id_apartamento:
         apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
         if apartamento:
             apartamento.estado = "Disponible"
-            apartamento.id_residente = None
+            if hasattr(apartamento, "id_residente"):
+                apartamento.id_residente = None
         residente.id_apartamento = None
 
     if inactivar:
         residente.estado = "Inactivo"
         residente.residente_actual = False
 
-    db.commit()
-    db.refresh(residente)
-
-    return {
-        "mensaje": f"Residente {residente.nombre} desasignado correctamente.",
-        "estado": residente.estado,
-    }
+    guardar_y_refrescar(db, residente)
+    return {"mensaje": f"Residente {residente.nombre} desasignado correctamente.", "estado": residente.estado}
 
 
-@auditar_completo("residentes")
 def activar_residente(db: Session, id_residente: int):
     residente = obtener_residente_por_id(db, id_residente)
-
     residente.estado = "Activo"
     residente.residente_actual = True
 
-    db.commit()
-    db.refresh(residente)
-
+    guardar_y_refrescar(db, residente)
     return {"mensaje": f"Residente {residente.nombre} activado correctamente.", "estado": residente.estado}
+
+
+def obtener_residentes_no_validados(db: Session, torre: str = None, piso: int = None):
+    Torre = aliased(models.Torre)
+    Piso = aliased(models.Piso)
+    Apartamento = aliased(models.Apartamento)
+    Residente = aliased(models.Residente)
+
+    query = (
+        db.query(
+            Residente.id,
+            Residente.nombre,
+            Residente.cedula,
+            Residente.correo,
+            Residente.telefono,
+            Residente.tipo_residente,
+            Residente.fecha_registro,
+            Torre.nombre.label("torre"),
+            Piso.numero.label("piso"),
+            Apartamento.numero.label("apartamento"),
+        )
+        .join(Apartamento, Residente.id_apartamento == Apartamento.id)
+        .join(Piso, Apartamento.id_piso == Piso.id)
+        .join(Torre, Piso.id_torre == Torre.id)
+        .filter(Residente.validado == False)
+    )
+
+    if torre:
+        query = query.filter(func.lower(Torre.nombre) == torre.lower())
+    if piso:
+        query = query.filter(Piso.numero == piso)
+
+    resultados = query.order_by(Residente.fecha_registro.asc()).all()
+
+    return [
+        {
+            "id": r.id,
+            "nombre": r.nombre,
+            "cedula": r.cedula,
+            "correo": r.correo,
+            "telefono": r.telefono,
+            "tipo_residente": r.tipo_residente,
+            "fecha_registro": r.fecha_registro,
+            "torre": r.torre,
+            "piso": r.piso,
+            "apartamento": r.apartamento,
+        }
+        for r in resultados
+    ]
+
+
+def obtener_residentes_por_torre(db: Session, nombre_torre: str):
+    return (
+        db.query(models.Residente)
+        .join(models.Apartamento, models.Residente.id_apartamento == models.Apartamento.id)
+        .join(models.Piso, models.Apartamento.id_piso == models.Piso.id)
+        .join(models.Torre, models.Piso.id_torre == models.Torre.id)
+        .filter(func.lower(models.Torre.nombre) == nombre_torre.lower())
+        .order_by(models.Residente.nombre.asc())
+        .all()
+    )
+
+
+def obtener_residente_asociado(db: Session, id_usuario: int):
+    residente = db.query(models.Residente).filter(models.Residente.id_usuario == id_usuario).first()
+
+    if not residente:
+        raise HTTPException(status_code=404, detail="No se encontró un residente asociado a este usuario.")
+
+    return residente
+
+
+def buscar_residente(db: Session, termino: str):
+    termino = f"%{termino.lower()}%"
+    return (
+        db.query(models.Residente)
+        .filter(
+            func.lower(models.Residente.nombre).like(termino)
+            | func.lower(models.Residente.cedula).like(termino)
+            | func.lower(models.Residente.correo).like(termino)
+        )
+        .order_by(models.Residente.nombre.asc())
+        .all()
+    )
+
+
+def contar_residentes(db: Session, solo_activos: bool = True):
+    query = db.query(func.count(models.Residente.id))
+    if solo_activos:
+        query = query.filter(models.Residente.estado == "Activo")
+    return query.scalar()
+
+
+def obtener_historial_residentes_por_apartamento(db: Session, id_apartamento: int):
+    return (
+        db.query(models.Residente)
+        .filter(models.Residente.id_apartamento == id_apartamento)
+        .order_by(models.Residente.fecha_registro.asc())
+        .all()
+    )

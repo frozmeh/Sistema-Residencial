@@ -63,11 +63,6 @@ def inicializar_roles(db: Session):
 
 def crear_rol(db: Session, rol: schemas.RolCreate):
     raise HTTPException(status_code=403, detail="No se pueden crear roles manualmente")
-    """
-    db_rol = models.Rol(**rol.dict())
-    db.add(db_rol)
-    guardar_y_refrescar(db, db_rol)
-    return db_rol """
 
 
 def obtener_roles(db: Session, skip: int = 0, limit: int = 100):

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from .. import schemas, crud
 from ..database import get_db
-from ..utils.seguridad import get_usuario_actual
+from ..core.security import get_usuario_actual
 
 router = APIRouter(prefix="/reportes", tags=["Reportes Financieros"])
 

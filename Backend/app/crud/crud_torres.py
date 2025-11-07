@@ -153,11 +153,11 @@ def obtener_apartamentos_por_torre(db: Session, id_torre: int):
 
 
 def obtener_apartamentos_por_piso(db: Session, id_piso: int):
-    return (
+    apartamentos = (
         db.query(models.Apartamento)
         .options(
             joinedload(models.Apartamento.tipo_apartamento),
-            joinedload(models.Apartamento.residente),  # 👈 Cargamos el residente también
+            joinedload(models.Apartamento.residente),
         )
         .filter(models.Apartamento.id_piso == id_piso)
         .all()
@@ -170,10 +170,11 @@ def obtener_apartamentos_por_piso(db: Session, id_piso: int):
 def obtener_apartamento_en_piso(db: Session, id_piso: int, id_apartamento: int):
     apt = (
         db.query(models.Apartamento)
+        .join(models.Piso)
         .options(joinedload(models.Apartamento.tipo_apartamento), joinedload(models.Apartamento.residente))
         .filter(models.Apartamento.id == id_apartamento, models.Apartamento.id_piso == id_piso)
         .first()
     )
     if not apt:
-        raise HTTPException(status_code=404, detail="Apartamento no encontrado")
+        raise HTTPException(status_code=404, detail="Apartamento no encontrado o no pertenece a este piso")
     return apt

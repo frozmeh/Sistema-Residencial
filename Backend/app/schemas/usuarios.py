@@ -22,14 +22,23 @@ class UsuarioCreate(BaseModel):
     ultimo_ip: Optional[str] = None
 
 
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    id_rol: Optional[int] = None
+
+
 class UsuarioOut(BaseModel):
-    id: int
-    nombre: str
-    email: EmailStr
-    id_rol: int
-    estado: str
+    id: Optional[int] = None
+    nombre: Optional[str] = None
+    email: Optional[EmailStr] = None
+    id_rol: Optional[int] = None
+    estado: Optional[str] = None
     fecha_creacion: Optional[date] = None
     ultima_sesion: Optional[datetime] = None
+    ultimo_ip: Optional[str] = None
+    mensaje: Optional[str] = None
 
     class Config:
         from_attributes = True  # Lee los objetos directamente y los convierte en JSON
@@ -39,3 +48,8 @@ class UsuarioOut(BaseModel):
         if isinstance(v, (datetime, date)):
             return v.strftime("%Y-%m-%d")
         return v
+
+
+class UsuarioEstadoResponse(BaseModel):
+    mensaje: Optional[str]
+    usuario: Optional[UsuarioOut]

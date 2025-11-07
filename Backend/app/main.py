@@ -4,10 +4,6 @@ from .database import engine, Base, SessionLocal
 # Trae el motor de conexión y la clase Base de la database.py
 # Importar routers (más adelante)
 from .routers import (
-    roles,
-    torres,
-    usuarios,
-    residentes,
     auth,
     pagos,
     gastos,
@@ -16,9 +12,16 @@ from .routers import (
     notificaciones,
     auditoria,
     reporte_financiero,
-    test_seguridad,
-    test_admin,
+    usuarios,
 )
+from .routers.admin import (
+    roles,
+    torres,
+    usuarios as admin_usuarios,
+    residentes as admin_residentes,
+    gastos as admin_gastos,
+)
+from .routers.residente import perfil_usuario, perfil_residente, gastos_apartamento as residente_gastos
 from .crud import inicializar_roles
 
 # from . import initial_data
@@ -49,15 +52,17 @@ def startup_event():
 
 
 # Incluir routers (más adelante)
-app.include_router(usuarios.router)
-app.include_router(test_seguridad.router)
-app.include_router(test_admin.router)
 app.include_router(auth.router)
 app.include_router(roles.router)
-app.include_router(residentes.router)
+app.include_router(usuarios.router)
+app.include_router(admin_usuarios.router)
+app.include_router(perfil_usuario.router)
+app.include_router(admin_residentes.router)
+app.include_router(perfil_residente.router)
 app.include_router(torres.router)
+app.include_router(admin_gastos.router)
+app.include_router(residente_gastos.router)
 app.include_router(pagos.router)
-app.include_router(gastos.router)
 app.include_router(incidencias.router)
 app.include_router(reservas.router)
 app.include_router(notificaciones.router)

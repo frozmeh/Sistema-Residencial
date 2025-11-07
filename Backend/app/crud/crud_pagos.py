@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from . import models, schemas
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from . import models, schemas
 from ..utils.db_helpers import guardar_y_refrescar
 from ..utils.auditoria_decorator import auditar_completo

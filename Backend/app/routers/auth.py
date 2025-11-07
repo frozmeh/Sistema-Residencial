@@ -1,21 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 from sqlalchemy import func
+from .. import crud, schemas
 from ..database import get_db
 from ..models import Usuario  # Ajusta el import según tu estructura
-from passlib.context import CryptContext
-from jose import jwt
 from ..core.security import verificar_contrasena, crear_token
 from ..schemas import Token
 
 
-SECRET_KEY = "Santiago.02"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(prefix="/auth", tags=["Autenticación (Login / Registro)"])
 
 
 class Credenciales(BaseModel):
@@ -39,3 +33,8 @@ def login(credenciales: Credenciales, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "usuario": {"id": usuario.id, "nombre": usuario.nombre, "rol": usuario.id_rol, "correo": usuario.email},
     }
+
+
+@router.post("/registro", response_model=schemas.UsuarioOut)
+def registrar_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)):
+    return crud.crear_usuario(db, usuario)

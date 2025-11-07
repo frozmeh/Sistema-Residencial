@@ -1,22 +1,17 @@
-from datetime import datetime
-
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy import func
-
 from .. import models, schemas
-from ..utils.seguridad import encriptar_contrasena
+from ..core.security import encriptar_contrasena
 from ..utils.validaciones import validar_usuario, validar_contrasena
-from ..utils.db_helpers import guardar_y_refrescar, obtener_usuario_por_id
-from ..utils.auditoria_decorator import auditar_completo
+from ..utils.db_helpers import guardar_y_refrescar
 
 
-# ==================
+# =================
 # ---- Usuario ----
-# ==================
+# =================
 
 
-# @auditar_completo("usuarios")
 def crear_usuario(db: Session, usuario: schemas.UsuarioCreate):
     validar_usuario(nombre=usuario.nombre, email=usuario.email, password=usuario.password)
 
@@ -34,26 +29,107 @@ def crear_usuario(db: Session, usuario: schemas.UsuarioCreate):
     return db_usuario
 
 
-# @auditar_completo("usuarios")
+def obtener_usuarios(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Usuario).offset(skip).limit(limit).all()
+
+
+def listar_usuarios_activos(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Usuario).filter(models.Usuario.estado == "Activo").offset(skip).limit(limit).all()
+
+
+def buscar_usuarios(db: Session, q: str):
+    return (
+        db.query(models.Usuario)
+        .filter((models.Usuario.nombre.ilike(f"%{q}%")) | (models.Usuario.email.ilike(f"%{q}%")))
+        .all()
+    )
+
+
+def obtener_usuario_por_nombre(db: Session, nombre_usuario: int):
+    usuario = db.query(models.Usuario).filter(models.Usuario.nombre == nombre_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return usuario
+
+
+def obtener_usuario_por_email(db: Session, email_usuario: int):
+    usuario = db.query(models.Usuario).filter(models.Usuario.email == email_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return usuario
+
+
+def obtener_usuario_por_id(db: Session, id_usuario: int):
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == id_usuario).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return usuario
+
+
 def actualizar_usuario(
     db: Session,
     id_usuario: int,
     nuevo_nombre: str = None,
     nuevo_email: str = None,
-    nueva_password: str = None,
 ):
     usuario = obtener_usuario_por_id(db, id_usuario)
-    validar_usuario(nombre=nuevo_nombre, email=nuevo_email, password=nueva_password)
 
-    usuario.nombre = nuevo_nombre
-    usuario.email = nuevo_email
-    usuario.password = encriptar_contrasena(nueva_password)
+    if (
+        db.query(models.Usuario)
+        .filter(func.lower(models.Usuario.nombre) == nuevo_nombre.lower(), models.Usuario.id != id_usuario)
+        .first()
+    ):
+        raise HTTPException(status_code=400, detail="El nombre de usuario ya está en uso")
+
+    if (
+        db.query(models.Usuario)
+        .filter(func.lower(models.Usuario.email) == nuevo_email.lower(), models.Usuario.id != id_usuario)
+        .first()
+    ):
+        raise HTTPException(status_code=400, detail="El correo ya está en uso")
+
+    if nuevo_nombre or nuevo_email:
+        validar_usuario(
+            nombre=nuevo_nombre if nuevo_nombre else usuario.nombre,
+            email=nuevo_email if nuevo_email else usuario.email,
+        )
+
+    if nuevo_nombre:
+        usuario.nombre = nuevo_nombre
+    if nuevo_email:
+        usuario.email = nuevo_email
 
     guardar_y_refrescar(db, usuario)
     return usuario
 
 
-# @auditar_completo("usuarios")
+def cambiar_rol_usuario(db: Session, id_usuario: int, nuevo_id_rol: int):
+    usuario = obtener_usuario_por_id(db, id_usuario)
+
+    usuario.id_rol = nuevo_id_rol
+    guardar_y_refrescar(db, usuario)
+    return {"mensaje": "Rol actualizado", "usuario": usuario}
+
+
+def cambiar_estado_usuario(db: Session, id_usuario: int, nuevo_estado: str):
+    usuario = obtener_usuario_por_id(db, id_usuario)
+
+    estados_validos = ["Activo", "Inactivo", "Bloqueado"]
+    if nuevo_estado not in estados_validos:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Opciones: {', '.join(estados_validos)}")
+
+    if usuario.estado == nuevo_estado:
+        raise HTTPException(status_code=400, detail=f"El usuario ya se encuentra en estado '{nuevo_estado}'.")
+
+    usuario.estado = nuevo_estado
+    guardar_y_refrescar(db, usuario)
+
+    return {
+        "mensaje": f"Estado de usuario {id_usuario} actualizado a '{nuevo_estado}' correctamente",
+        "usuario": usuario,
+    }
+
+
 def cambiar_password(db: Session, id_usuario: int, nueva_password: str):
     usuario = obtener_usuario_por_id(db, id_usuario)
 
@@ -62,38 +138,6 @@ def cambiar_password(db: Session, id_usuario: int, nueva_password: str):
     usuario.password = encriptar_contrasena(nueva_password)
     guardar_y_refrescar(db, usuario)
     return {
-        "id": usuario.id,
-        "nombre": usuario.nombre,
-        "mensaje": "Contraseña actualizada",
+        "mensaje": f"Contraseña actualizada del usuario {usuario.nombre}",
+        "usuario": usuario,
     }
-
-
-# @auditar_completo("usuarios")
-def actualizar_ultima_sesion(db: Session, id_usuario: int):
-    usuario = obtener_usuario_por_id(db, id_usuario)
-    usuario.ultima_sesion = datetime.utcnow()
-    guardar_y_refrescar(db, usuario)
-    return usuario
-
-
-# @auditar_completo("usuarios")
-def cambiar_rol_usuario(db: Session, id_usuario: int, nuevo_id_rol: int):
-    usuario = obtener_usuario_por_id(db, id_usuario)
-
-    usuario.id_rol = nuevo_id_rol
-    guardar_y_refrescar(db, usuario)
-    return usuario
-
-
-# @auditar_completo("usuarios")
-def desactivar_usuario(db: Session, id_usuario: int):
-    usuario = obtener_usuario_por_id(db, id_usuario)
-
-    usuario.estado = "Inactivo"
-    guardar_y_refrescar(db, usuario)
-    return usuario
-
-
-# @auditar_completo("usuarios")
-def obtener_usuarios(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Usuario).offset(skip).limit(limit).all()

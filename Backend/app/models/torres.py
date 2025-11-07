@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, Enum, CheckConstraint, UniqueConstraint, ForeignKey, DateTime
-from datetime import datetime
+from sqlalchemy import Column, Integer, String, DECIMAL, Enum, ForeignKey, DateTime
+from ..models.torres import gastos_variables_apartamentos
 from ..database import Base
 from sqlalchemy.orm import relationship
 
@@ -61,7 +61,9 @@ class Apartamento(Base):
     residente = relationship("Residente", back_populates="apartamento", uselist=False)
     pagos = relationship("Pago", back_populates="apartamento", cascade="all, delete-orphan")
     gastos_fijos = relationship("GastoFijo", back_populates="apartamento")
-    gastos_variables = relationship("GastoVariable", back_populates="apartamento")
+    gastos_variables = relationship(
+        "GastoVariable", secondary=gastos_variables_apartamentos, back_populates="apartamentos"
+    )
 
 
 # ===============================

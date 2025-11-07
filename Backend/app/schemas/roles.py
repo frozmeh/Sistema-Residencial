@@ -22,3 +22,8 @@ class RolOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class RolMensajeOut(BaseModel):
+    mensaje: str
+    rol: RolOut

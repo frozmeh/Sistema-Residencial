@@ -24,6 +24,7 @@ class ResidenteBase(BaseModel):
 
     residente_actual: Optional[bool] = None
     estado: Optional[Literal["Activo", "Inactivo", "Suspendido"]] = None
+    validado: Optional[bool] = False
 
 
 class ResidenteCreate(ResidenteBase):
@@ -31,18 +32,82 @@ class ResidenteCreate(ResidenteBase):
     cedula: str
     correo: EmailStr
     tipo_residente: Literal["Propietario", "Inquilino"]
+
+    # Campos auxiliares para asociar el apartamento
     torre: str
     numero_apartamento: str
     piso: int
 
 
-class ResidenteUpdate(ResidenteBase):
-    pass
+class ResidenteUpdateAdmin(ResidenteBase):
+    validado: Optional[bool] = None
+
+
+class ResidenteUpdateResidente(BaseModel):
+    telefono: Optional[str] = Field(None, max_length=20)
+    correo: Optional[EmailStr] = None
+
+
+class UsuarioBase(BaseModel):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ApartamentoBase(BaseModel):
+    id: int
+    numero: str
+
+    class Config:
+        from_attributes = True
 
 
 class ResidenteOut(ResidenteBase):
     id: int
+    fecha_registro: Optional[date]
+    validado: bool
+
+    # Datos derivados (para retornar en joins)
+    usuario: Optional[UsuarioBase] = None
+    apartamento: Optional[ApartamentoBase] = None
+    """ Por ejemplo para usar
+        query = db.query(Residente, Usuario.nombre.label("usuario"), Apartamento.numero.label("apartamento"))
+        .join(Usuario, Usuario.id == Residente.id_usuario)
+        .join(Apartamento, Apartamento.id == Residente.id_apartamento)
+        .all() """
+
+    class Config:
+        from_attributes = True
+
+
+class ResidentePendienteOut(BaseModel):
+    id: int
+    nombre: str
+    cedula: str
+    correo: Optional[EmailStr]
+    telefono: Optional[str]
+    tipo_residente: str
     fecha_registro: date
+    torre: str
+    piso: int
+    apartamento: str
+
+    class Config:
+        from_attributes = True
+
+
+class ResidenteValidadoOut(BaseModel):
+    id: int
+    nombre: str
+    cedula: str
+    correo: Optional[EmailStr]
+    telefono: Optional[str]
+    tipo_residente: str
+    fecha_registro: date
+    torre: str
+    piso: int
+    apartamento: str
 
     class Config:
         from_attributes = True

@@ -5,6 +5,7 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from ..database import get_db
+from sqlalchemy.orm import joinedload
 from ..models import Usuario
 from ..core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
@@ -15,7 +16,11 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
-# ---------- Contraseñas ----------
+# =====================
+# ---- Contraseñas ----
+# =====================
+
+
 def encriptar_contrasena(password: str):
     return pwd_context.hash(password)
 
@@ -24,7 +29,11 @@ def verificar_contrasena(password_plano: str, password_hash: str):
     return pwd_context.verify(password_plano, password_hash)
 
 
-# ---------- JWT ----------
+# =============
+# ---- JWT ----
+# =============
+
+
 def crear_token(data: dict, expira_en_minutos: int = ACCESS_TOKEN_EXPIRE_MINUTES):
     to_encode = data.copy()
     expiracion = datetime.utcnow() + timedelta(minutes=expira_en_minutos)
@@ -43,23 +52,37 @@ def decodificar_token(token: str):
         )
 
 
-# ---------- Usuario logueado ----------
+# ==========================
+# ---- Usuario Logueado ----
+# ==========================
+
+
 def get_usuario_actual(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     payload = decodificar_token(token)
     usuario_id = payload.get("sub")
     if not usuario_id:
         raise HTTPException(status_code=401, detail="Token inválido")
-    usuario = db.query(Usuario).filter(Usuario.id == int(usuario_id)).first()
+
+    usuario = (
+        db.query(Usuario)
+        .options(joinedload(Usuario.rol))  # 👈 fuerza a cargar el rol
+        .filter(Usuario.id == int(usuario_id))
+        .first()
+    )
+
     if not usuario or usuario.estado != "Activo":
         raise HTTPException(status_code=403, detail="Usuario inactivo o bloqueado")
+
     return usuario
 
 
-# ---------- Validar permisos ----------
+# ==========================
+# ---- Validar permisos ----
+# ==========================
+
+
 def validar_permiso(usuario: "Usuario", entidad: str, accion: str):
-    """
-    Valida que el usuario tenga permiso para realizar la acción sobre la entidad.
-    """
+    # Valida que el usuario tenga permiso para realizar la acción sobre la entidad.
     if not usuario or not usuario.rol or not usuario.rol.permisos:
         raise HTTPException(status_code=403, detail="No tiene permisos asignados")
 
@@ -82,13 +105,13 @@ def validar_permiso(usuario: "Usuario", entidad: str, accion: str):
     return True
 
 
-# =======================
-# 🧩 Verificación por rol
-# =======================
+# ==============================
+# ---- Verificación por rol ----
+# ==============================
 
 
 def verificar_admin(usuario: Usuario = Depends(get_usuario_actual)):
-    if usuario.rol.nombre.lower() != "admin":
+    if usuario.rol.nombre.lower() != "administrador":
         raise HTTPException(status_code=403, detail="Se requieren permisos de administrador.")
     return usuario
 
@@ -96,8 +119,8 @@ def verificar_admin(usuario: Usuario = Depends(get_usuario_actual)):
 def verificar_residente(usuario: Usuario = Depends(get_usuario_actual)):
     if usuario.rol.nombre.lower() != "residente":
         raise HTTPException(status_code=403, detail="Se requieren permisos de residente.")
-    # Opcional: comprobar aprobación
+    # Comprobar aprobación
     if hasattr(usuario, "residente") and usuario.residente:
-        if not usuario.residente.aprobado:
+        if not usuario.residente.validado:
             raise HTTPException(status_code=403, detail="El residente no está aprobado.")
     return usuario
