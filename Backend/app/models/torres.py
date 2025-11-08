@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, Enum, ForeignKey, DateTime
-from ..models.torres import gastos_variables_apartamentos
+from sqlalchemy import Column, Integer, String, DECIMAL, Enum, ForeignKey
 from ..database import Base
+from ..models.gastos import gastos_variables_apartamentos
 from sqlalchemy.orm import relationship
 
 

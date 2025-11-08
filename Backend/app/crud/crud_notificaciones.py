@@ -10,7 +10,7 @@ from ..utils.auditoria_decorator import auditar_completo
 # ========================
 
 
-@auditar_completo("notificaciones")
+# @auditar_completo("notificaciones")
 def crear_notificacion(db: Session, noti: schemas.NotificacionCreate):
     nuevo = models.Notificacion(**noti.dict())
     db.add(nuevo)
@@ -19,7 +19,7 @@ def crear_notificacion(db: Session, noti: schemas.NotificacionCreate):
     return nuevo
 
 
-@auditar_completo("notificaciones")
+# @auditar_completo("notificaciones")
 def obtener_notificaciones(db: Session, id_usuario: int = None, tipo: str = None, leido: bool = None):
     query = db.query(models.Notificacion)
 
@@ -33,12 +33,12 @@ def obtener_notificaciones(db: Session, id_usuario: int = None, tipo: str = None
     return query.order_by(models.Notificacion.fecha_envio.desc()).all()
 
 
-@auditar_completo("notificaciones")
+# @auditar_completo("notificaciones")
 def obtener_notificacion_por_id(db: Session, id_notificacion: int):
     return db.query(models.Notificacion).filter(models.Notificacion.id == id_notificacion).first()
 
 
-@auditar_completo("notificaciones")
+# @auditar_completo("notificaciones")
 def actualizar_notificacion(db: Session, id_notificacion: int, datos: schemas.NotificacionUpdate):
     noti = obtener_notificacion_por_id(db, id_notificacion)
     if not noti:
@@ -55,7 +55,7 @@ def actualizar_notificacion(db: Session, id_notificacion: int, datos: schemas.No
     return noti
 
 
-@auditar_completo("notificaciones")
+# @auditar_completo("notificaciones")
 def eliminar_notificacion(db: Session, id_notificacion: int):
     noti = obtener_notificacion_por_id(db, id_notificacion)
     if not noti:

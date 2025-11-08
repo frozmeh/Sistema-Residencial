@@ -3,10 +3,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os  # load_dotenv y os cargan variables de entorno desde el archivo .env
 from sqlalchemy import create_engine  # Función que crea la conexión con la DB
-from sqlalchemy.orm import sessionmaker, declarative_base
 
 """declarative_base = Crear clases que representen tablas en la DB
 sessionmaker = crea sesiones con la base de datos para consultas / guardar datos"""
+from sqlalchemy.orm import sessionmaker, declarative_base
+
 from urllib.parse import quote_plus  # Permite caracteres especiales en password
 
 

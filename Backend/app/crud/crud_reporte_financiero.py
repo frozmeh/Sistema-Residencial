@@ -8,7 +8,7 @@ from ..utils.auditoria_decorator import auditar_completo
 # ==============================
 
 
-@auditar_completo("reportes_financieros")
+# @auditar_completo("reportes_financieros")
 def crear_reporte(db: Session, reporte: schemas.ReporteFinancieroCreate):
     nuevo = models.ReporteFinanciero(**reporte.dict())
     db.add(nuevo)
@@ -25,7 +25,7 @@ def obtener_reporte_por_id(db: Session, id_reporte: int):
     return db.query(models.ReporteFinanciero).filter(models.ReporteFinanciero.id == id_reporte).first()
 
 
-@auditar_completo("reportes_financieros")
+# @auditar_completo("reportes_financieros")
 def actualizar_reporte(db: Session, id_reporte: int, datos: schemas.ReporteFinancieroUpdate):
     rep = obtener_reporte_por_id(db, id_reporte)
     if not rep:
@@ -45,7 +45,7 @@ def actualizar_reporte(db: Session, id_reporte: int, datos: schemas.ReporteFinan
     return rep
 
 
-@auditar_completo("reportes_financieros")
+# @auditar_completo("reportes_financieros")
 def eliminar_reporte(db: Session, id_reporte: int):
     rep = obtener_reporte_por_id(db, id_reporte)
     if not rep:

@@ -1,84 +1,96 @@
 from functools import wraps
 from sqlalchemy.orm import Session
-from .. import models, schemas
-import json
+from fastapi import Request
+from .. import models
+import datetime
+from decimal import Decimal
 
 
-def auditar_completo(tabla_afectada: str):
+def to_serializable(value):
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    elif isinstance(value, Decimal):
+        return float(value)
+    elif value is None:
+        return None
+    else:
+        return str(value)
+
+
+def auditar_completo(modelo, nombre_tabla: str):
     """
-    Decorador para registrar auditoría con detalle completo y cambios exactos en actualizaciones.
-    tabla_afectada: nombre de la tabla sobre la que se realiza la acción.
+    Decorador para auditar funciones CRUD de FastAPI.
     """
 
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             db: Session = kwargs.get("db")
-            id_usuario_actual: int = kwargs.get("id_usuario_actual")
+            request: Request = kwargs.get("request")
+            usuario_actual = kwargs.get("usuario") or kwargs.get("usuario_actual")
+            id_usuario_actual = getattr(usuario_actual, "id", None)
+            obj_id = kwargs.get("id_objeto") or getattr(kwargs.get("datos", None), "id", None) or kwargs.get("id")
 
-            if db is None or id_usuario_actual is None:
-                raise ValueError("Se requiere 'db' y 'id_usuario_actual' como argumentos")
+            if db is None:
+                raise ValueError("No se encontró 'db' para la auditoría")
+            if id_usuario_actual is None:
+                raise ValueError("No se encontró 'usuario_actual' para la auditoría")
 
-            # Para actualizaciones, capturar estado previo
+            # Estado previo (solo actualizar/eliminar)
             objeto_previo = None
-            if func.__name__.startswith("actualizar") or func.__name__.startswith("modificar"):
-                obj_id = kwargs.get("id_" + tabla_afectada[:-1])  # asume convención 'id_usuario', 'id_pago', etc.
-                objeto_previo = db.query(getattr(models, tabla_afectada.capitalize())).get(obj_id)
-                if objeto_previo:
-                    objeto_previo = {c.name: getattr(objeto_previo, c.name) for c in objeto_previo.__table__.columns}
+            if func.__name__.startswith(("actualizar", "modificar", "eliminar")) and obj_id:
+                objeto_previo_db = db.get(modelo, obj_id)
+                if objeto_previo_db:
+                    objeto_previo = {
+                        c.name: to_serializable(getattr(objeto_previo_db, c.name))
+                        for c in objeto_previo_db.__table__.columns
+                    }
 
-            # Ejecutar función CRUD
+            # Ejecutar función original
             resultado = func(*args, **kwargs)
 
-            # Determinar acción
+            # Acción
             if func.__name__.startswith("crear"):
                 accion = "Crear"
-            elif func.__name__.startswith("actualizar") or func.__name__.startswith("modificar"):
+            elif func.__name__.startswith(("actualizar", "modificar", "cambiar")):
                 accion = "Actualizar"
-            elif func.__name__.startswith("eliminar") or func.__name__.startswith("borrar"):
+            elif func.__name__.startswith(("eliminar", "borrar")):
                 accion = "Eliminar"
             else:
-                accion = "Acción"
+                return resultado  # no auditar lecturas
 
-            # Generar detalle
-            detalle = ""
-            try:
-                if accion == "Actualizar" and objeto_previo:
-                    # diff entre objeto previo y resultado
-                    objeto_nuevo = {c.name: getattr(resultado, c.name) for c in resultado.__table__.columns}
-                    cambios = {
-                        k: {"antes": objeto_previo[k], "después": objeto_nuevo[k]}
-                        for k in objeto_previo
-                        if objeto_previo[k] != objeto_nuevo[k]
-                    }
-                    detalle = json.dumps(cambios, ensure_ascii=False)
-                elif hasattr(resultado, "__table__"):
-                    detalle = json.dumps(
-                        {c.name: getattr(resultado, c.name) for c in resultado.__table__.columns}, ensure_ascii=False
-                    )
-                elif isinstance(resultado, list):
-                    detalle = json.dumps(
-                        [
-                            {c.name: getattr(item, c.name) for c in item.__table__.columns}
-                            for item in resultado
-                            if hasattr(item, "__table__")
-                        ],
-                        ensure_ascii=False,
-                    )
-                elif isinstance(resultado, bool):
-                    detalle = f"Resultado: {resultado}"
-                else:
-                    detalle = str(resultado)
-            except Exception as e:
-                detalle = f"No se pudo generar detalle automáticamente: {str(e)}"
+            # Cambios
+            cambios = {}
+            if accion == "Actualizar" and objeto_previo and hasattr(resultado, "__table__"):
+                objeto_nuevo = {
+                    c.name: to_serializable(getattr(resultado, c.name)) for c in resultado.__table__.columns
+                }
+                cambios = {
+                    k: {"antes": objeto_previo[k], "después": objeto_nuevo[k]}
+                    for k in objeto_previo
+                    if objeto_previo[k] != objeto_nuevo[k]
+                }
 
-            # Registrar auditoría
-            audit = schemas.AuditoriaCreate(
-                id_usuario=id_usuario_actual, accion=accion, tabla_afectada=tabla_afectada, detalle=detalle
+            # Info request
+            ip = request.client.host if request else "Desconocida"
+            endpoint = f"{request.method} {request.url.path}" if request else "Desconocido"
+
+            # Detalle estructurado
+            detalle_struct = {"cambios": cambios if cambios else None, "ip": ip, "endpoint": endpoint}
+
+            # Guardar auditoría
+            audit = models.Auditoria(
+                id_usuario=id_usuario_actual,
+                accion=accion,
+                tabla_afectada=nombre_tabla,
+                detalle=detalle_struct,
+                fecha=datetime.datetime.now(),
             )
-            nuevo = models.Auditoria(**audit.dict())
-            db.add(nuevo)
-            db.commit()
+
+            nueva_sesion = Session(bind=db.bind)
+            nueva_sesion.add(audit)
+            nueva_sesion.commit()
+            nueva_sesion.close()
 
             return resultado
 

@@ -7,10 +7,6 @@ _cache_tasa = {"valor": None, "ultima_actualizacion": None}
 
 
 def obtener_tasa_bcv(cache_duracion_horas: int = 12) -> tuple[Decimal, datetime]:
-    """
-    Obtiene la tasa oficial (BCV) desde DolarApi.com.
-    Devuelve un tuple: (tasa, fecha_ultima_actualizacion)
-    """
     global _cache_tasa
     ahora = datetime.now()
 

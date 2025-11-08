@@ -11,7 +11,7 @@ from ..utils.auditoria_decorator import auditar_completo
 # ==================
 
 
-@auditar_completo("reservas")
+# @auditar_completo("reservas")
 def validar_disponibilidad(
     db: Session, area: str, fecha: date, hora_inicio: time, hora_fin: time, id_excluir: int = None
 ):
@@ -29,7 +29,7 @@ def validar_disponibilidad(
             )
 
 
-@auditar_completo("reservas")
+# @auditar_completo("reservas")
 def crear_reserva(db: Session, reserva: schemas.ReservaCreate):
     # Validar que la fecha de reserva no sea pasada
     if reserva.fecha_reserva < date.today():
@@ -46,12 +46,12 @@ def crear_reserva(db: Session, reserva: schemas.ReservaCreate):
     return guardar_y_refrescar(db, nuevo)
 
 
-@auditar_completo("reservas")
+# @auditar_completo("reservas")
 def obtener_reservas(db: Session):
     return db.query(models.Reserva).all()
 
 
-@auditar_completo("reservas")
+# @auditar_completo("reservas")
 def obtener_reserva_por_id(db: Session, id_reserva: int):
     res = db.query(models.Reserva).filter(models.Reserva.id == id_reserva).first()
     if not res:
@@ -59,7 +59,7 @@ def obtener_reserva_por_id(db: Session, id_reserva: int):
     return res
 
 
-@auditar_completo("reservas")
+# @auditar_completo("reservas")
 def actualizar_reserva(db: Session, id_reserva: int, datos: schemas.ReservaUpdate):
     res = obtener_reserva_por_id(db, id_reserva)
 
@@ -80,7 +80,7 @@ def actualizar_reserva(db: Session, id_reserva: int, datos: schemas.ReservaUpdat
     return guardar_y_refrescar(db, res)
 
 
-@auditar_completo("reservas")
+# @auditar_completo("reservas")
 def eliminar_reserva(db: Session, id_reserva: int):
     res = obtener_reserva_por_id(db, id_reserva)
     db.delete(res)

@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from ... import schemas, crud
+from ... import schemas, crud, models
 from ...database import get_db
 from ...core.security import verificar_admin
 
@@ -14,8 +14,8 @@ router = APIRouter(prefix="/usuarios", tags=["Usuarios (Administración)"])
 
 
 @router.post("/", response_model=schemas.UsuarioOut)
-def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db), admin=Depends(verificar_admin)):
-    return crud.crear_usuario(db, usuario)
+def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db), request: Request = None):
+    return crud.crear_usuario(db, usuario, request=request)
 
 
 @router.get("/", response_model=list[schemas.UsuarioOut])
@@ -50,38 +50,56 @@ def obtener_usuario(id_usuario: int, db: Session = Depends(get_db), admin=Depend
 
 @router.put("/{id_usuario}", response_model=schemas.UsuarioOut)
 def actualizar_usuario(
-    id_usuario: int, datos: schemas.UsuarioUpdate, db: Session = Depends(get_db), admin=Depends(verificar_admin)
+    id_usuario: int,
+    datos: schemas.UsuarioUpdate,
+    db: Session = Depends(get_db),
+    admin: models.Usuario = Depends(verificar_admin),
+    request: Request = None,
 ):
-    return crud.actualizar_usuario(db, id_usuario, datos.nombre, datos.email)
+    return crud.actualizar_usuario(db, id_usuario, datos.nombre, datos.email, usuario_actual=admin, request=request)
 
 
 @router.put("/{id_usuario}/rol", response_model=schemas.UsuarioEstadoResponse)
 def cambiar_rol(
-    id_usuario: int, datos: schemas.UsuarioUpdate, db: Session = Depends(get_db), admin=Depends(verificar_admin)
+    id_usuario: int,
+    datos: schemas.UsuarioUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(verificar_admin),
+    request: Request = None,
 ):
-    return crud.cambiar_rol_usuario(db, id_usuario, datos.id_rol)
+    return crud.cambiar_rol_usuario(db, id_usuario, datos.id_rol, request=request)
 
 
 @router.put("/{id_usuario}/desactivar", response_model=schemas.UsuarioEstadoResponse)
-def desactivar_usuario(id_usuario: int, db: Session = Depends(get_db), admin=Depends(verificar_admin)):
-    return crud.cambiar_estado_usuario(db, id_usuario, "Inactivo")
+def desactivar_usuario(
+    id_usuario: int, db: Session = Depends(get_db), admin=Depends(verificar_admin), request: Request = None
+):
+    return crud.cambiar_estado_usuario(db, id_usuario, "Inactivo", request=request)
 
 
 @router.put("/{id_usuario}/reactivar", response_model=schemas.UsuarioEstadoResponse)
-def reactivar_usuario(id_usuario: int, db: Session = Depends(get_db), admin=Depends(verificar_admin)):
-    return crud.cambiar_estado_usuario(db, id_usuario, "Activo")
+def reactivar_usuario(
+    id_usuario: int, db: Session = Depends(get_db), admin=Depends(verificar_admin), request: Request = None
+):
+    return crud.cambiar_estado_usuario(db, id_usuario, "Activo", request=request)
 
 
 @router.put("/{id_usuario}/bloquear", response_model=schemas.UsuarioEstadoResponse)
-def bloquear_usuario(id_usuario: int, db: Session = Depends(get_db), admin=Depends(verificar_admin)):
-    return crud.cambiar_estado_usuario(db, id_usuario, "Bloqueado")
+def bloquear_usuario(
+    id_usuario: int, db: Session = Depends(get_db), admin=Depends(verificar_admin), request: Request = None
+):
+    return crud.cambiar_estado_usuario(db, id_usuario, "Bloqueado", request=request)
 
 
 @router.put("/{id_usuario}/cambiar-password", response_model=schemas.UsuarioEstadoResponse)
 def resetear_password(
-    id_usuario: int, datos: schemas.UsuarioUpdate, db: Session = Depends(get_db), admin=Depends(verificar_admin)
+    id_usuario: int,
+    datos: schemas.UsuarioUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(verificar_admin),
+    request: Request = None,
 ):
-    return crud.cambiar_password(db, id_usuario, datos.password)
+    return crud.cambiar_password(db, id_usuario, datos.password, request=request)
 
 
 @router.get("/{id_usuario}/residente", response_model=schemas.ResidenteOut)
