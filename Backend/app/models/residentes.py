@@ -30,13 +30,14 @@ class Residente(Base):
     telefono = Column(String)
     correo = Column(String)
     fecha_registro = Column(Date, default=func.current_date(), nullable=False)  # Fecha de registro del residente
-    residente_actual = Column(Boolean, default=True)  # True = residente vive actualmente en el apartamento
-    estado = Column(
-        Enum("Activo", "Inactivo", "Suspendido", name="estado_residente_enum"),
-        default="Activo",
-        nullable=False,
+    residente_actual = Column(Boolean, default=False)  # False = residente vive actualmente en el apartamento
+    estado_aprobacion = Column(
+        Enum("Pendiente", "Aprobado", "Rechazado", name="estado_aprobacion_enum"), default="Pendiente", nullable=False
     )
-    validado = Column(Boolean, default=False)  # Aprobación del residente por el administrador
+    estado_operativo = Column(
+        Enum("Activo", "Inactivo", "Suspendido", name="estado_operativo_enum"), default="Inactivo", nullable=False
+    )
+    reside_actualmente = Column(Boolean, default=False)
 
     usuario = relationship("Usuario", back_populates="residente", uselist=False)
     apartamento = relationship("Apartamento", back_populates="residente", uselist=False)

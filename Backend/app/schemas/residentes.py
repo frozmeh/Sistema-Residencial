@@ -1,8 +1,4 @@
-from pydantic import (
-    BaseModel,
-    EmailStr,
-    Field,
-)
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, Literal
 from datetime import date
 
@@ -12,34 +8,42 @@ from datetime import date
 # ====================
 
 
-class ResidenteBase(BaseModel):
-    id_apartamento: Optional[int] = None
-    id_usuario: Optional[int] = None
+class ResidenteCreate(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=100)
+    cedula: str = Field(..., min_length=5, max_length=15)
+    correo: EmailStr
+    tipo_residente: Literal["Propietario", "Inquilino"]
+    telefono: Optional[str] = Field(None, max_length=20)
 
+    torre: str
+    numero_apartamento: str
+    piso: int = Field(..., ge=0, le=50)
+
+    @field_validator("cedula")
+    @classmethod
+    def validar_cedula(cls, v):
+        if not v.replace("-", "").isdigit():
+            raise ValueError("La cédula debe contener solo números y guiones")
+        cedula_limpia = v.replace("-", "")
+        if len(cedula_limpia) < 5 or len(cedula_limpia) > 12:
+            raise ValueError("La cédula debe tener entre 5 y 12 dígitos")
+        return v
+
+    @field_validator("telefono")
+    @classmethod
+    def validar_telefono(cls, v):
+        if v and not v.replace("+", "").replace(" ", "").replace("-", "").isdigit():
+            raise ValueError("El teléfono debe contener solo números, +, espacios y guiones")
+        return v
+
+
+class ResidenteUpdateAdmin(BaseModel):
     nombre: Optional[str] = Field(None, min_length=2, max_length=100)
     cedula: Optional[str] = Field(None, min_length=5, max_length=15)
     telefono: Optional[str] = Field(None, max_length=20)
     correo: Optional[EmailStr] = None
     tipo_residente: Optional[Literal["Propietario", "Inquilino"]] = None
-
-    residente_actual: Optional[bool] = None
     estado: Optional[Literal["Activo", "Inactivo", "Suspendido"]] = None
-    validado: Optional[bool] = False
-
-
-class ResidenteCreate(ResidenteBase):
-    nombre: str
-    cedula: str
-    correo: EmailStr
-    tipo_residente: Literal["Propietario", "Inquilino"]
-
-    # Campos auxiliares para asociar el apartamento
-    torre: str
-    numero_apartamento: str
-    piso: int
-
-
-class ResidenteUpdateAdmin(ResidenteBase):
     validado: Optional[bool] = None
 
 
@@ -63,19 +67,21 @@ class ApartamentoBase(BaseModel):
         from_attributes = True
 
 
-class ResidenteOut(ResidenteBase):
+class ResidenteOut(BaseModel):
     id: int
-    fecha_registro: Optional[date]
+    nombre: str
+    cedula: str
+    correo: Optional[EmailStr]
+    telefono: Optional[str]
+    tipo_residente: str
+    fecha_registro: date
+    estado: str
     validado: bool
+    residente_actual: bool
 
-    # Datos derivados (para retornar en joins)
+    # Datos relacionados
     usuario: Optional[UsuarioBase] = None
     apartamento: Optional[ApartamentoBase] = None
-    """ Por ejemplo para usar
-        query = db.query(Residente, Usuario.nombre.label("usuario"), Apartamento.numero.label("apartamento"))
-        .join(Usuario, Usuario.id == Residente.id_usuario)
-        .join(Apartamento, Apartamento.id == Residente.id_apartamento)
-        .all() """
 
     class Config:
         from_attributes = True

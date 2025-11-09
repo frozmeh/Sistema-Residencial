@@ -4,11 +4,11 @@ from .routers import (
     auth,
     # incidencias,
     # reservas,
-    # notificaciones,
-    auditoria,
+    # notificaciones,,
     # reporte_financiero,
 )
 from .routers.admin import (
+    auditoria,
     roles,
     torres,
     usuarios as admin_usuarios,
@@ -22,7 +22,7 @@ from .routers.residente import (
     gastos_apartamento as residente_gastos,
     pagos_residente as residente_pagos,
 )
-from .crud import inicializar_roles
+from . import initial_data
 
 # from . import initial_data
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,14 +39,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-Base.metadata.create_all(bind=engine)  # Crear tablas en la base de datos
+Base.metadata.create_all(bind=engine)
 
 
 @app.on_event("startup")
 def startup_event():
     with SessionLocal() as db:
-        inicializar_roles(db)  # Inicializar roles fijos
-        # initial_data.inicializar_db(db)  # Inicializar datos básicos
+        initial_data.inicializar_db(db)
 
 
 # Incluir routers

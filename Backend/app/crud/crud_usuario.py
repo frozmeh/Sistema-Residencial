@@ -34,14 +34,15 @@ def crear_usuario(
 
     registrar_auditoria(
         db=db,
-        usuario_id=0,
-        usuario_nombre=None,
+        usuario_id=db_usuario.id,
+        usuario_nombre=db_usuario.nombre,
         accion="Registro inicial de cuenta",
         tabla="usuarios",
         objeto_previo=None,
         objeto_nuevo={c.name: getattr(db_usuario, c.name) for c in db_usuario.__table__.columns},
         request=request,
-        campos_visibles=["nombre", "email", "estado", "fecha_creacion"],
+        campos_visibles=["nombre", "email", "estado", "fecha_creacion", "password"],
+        forzar=True,
     )
 
     return db_usuario

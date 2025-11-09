@@ -1,5 +1,20 @@
-from datetime import timedelta
+# config.py
+from pydantic_settings import BaseSettings
+import os
+from dotenv import load_dotenv
 
-SECRET_KEY = "Santiago.02"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+load_dotenv()  # Carga variables del archivo .env
+
+
+class Settings(BaseSettings):
+    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    # Validar que exista la SECRET_KEY
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY no configurada en variables de entorno")
+
+
+settings = Settings()

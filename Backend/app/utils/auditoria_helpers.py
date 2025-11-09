@@ -39,6 +39,8 @@ def registrar_auditoria(
     forzar: bool = False,
 ):
     # Calcular cambios
+    previo_filtrado = {}
+    nuevo_filtrado = {}
     cambios = {}
     if objeto_previo and objeto_nuevo:
         previo_filtrado = filtrar_campos(objeto_previo, campos_visibles)

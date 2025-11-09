@@ -10,14 +10,12 @@ from typing import Optional
 
 class RolCreate(BaseModel):
     nombre: str
-    permisos: Optional[dict[str, list[str]]] = {}
     descripcion: Optional[str] = None
 
 
 class RolOut(BaseModel):
     id: int
     nombre: str
-    permisos: Optional[dict[str, list[str]]]
     descripcion: Optional[str]
 
     class Config:

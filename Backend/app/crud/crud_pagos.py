@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import func, and_
 from . import models, schemas
 from ..utils.db_helpers import guardar_y_refrescar
-
+from decimal import Decimal
 
 # =====================
 # ---- CRUD Pagos -----
@@ -12,20 +12,20 @@ from ..utils.db_helpers import guardar_y_refrescar
 
 
 def crear_pago(db: Session, pago: schemas.PagoCreate):
-    # Validar residente existente y activo
+    # Validar residente
     residente = db.query(models.Residente).filter(models.Residente.id == pago.id_residente).first()
     if not residente:
         raise HTTPException(status_code=404, detail="El residente especificado no existe")
     if getattr(residente, "estado", None) != "Activo":
         raise HTTPException(status_code=400, detail="El residente no está activo")
 
-    # ---- Validación (3): coherencia entre moneda y tipo_cambio_bcv ----
+    # Validación coherencia moneda / tipo_cambio
     if pago.moneda == "VES" and not pago.tipo_cambio_bcv:
         raise HTTPException(status_code=400, detail="Debe especificar tipo_cambio_bcv para pagos en VES")
     if pago.moneda == "USD" and pago.tipo_cambio_bcv:
         raise HTTPException(status_code=400, detail="No debe indicar tipo_cambio_bcv para pagos en USD")
 
-    # Evitar pagos duplicados en mismo día por mismo residente y concepto
+    # Evitar pagos duplicados en mismo día y concepto
     pago_existente = (
         db.query(models.Pago)
         .filter(
@@ -69,22 +69,22 @@ def actualizar_pago(db: Session, id_pago: int, datos_actualizados: schemas.PagoU
         if getattr(residente, "estado", None) != "Activo":
             raise HTTPException(status_code=400, detail="El nuevo residente no está activo")
 
-    # ---- Validación (3): coherencia entre moneda y tipo_cambio_bcv ----
+    # Coherencia moneda / tipo_cambio
     moneda = datos.get("moneda")
     tipo_cambio = datos.get("tipo_cambio_bcv")
-
     if moneda == "VES" and (not tipo_cambio or tipo_cambio <= 0):
         raise HTTPException(status_code=400, detail="Debe especificar tipo_cambio_bcv válido para pagos en VES")
     if moneda == "USD" and tipo_cambio:
         raise HTTPException(status_code=400, detail="No debe indicar tipo_cambio_bcv para pagos en USD")
 
-    # ---- Validación (1): coherencia entre verificado y estado ----
+    # Coherencia verificado / estado
     if "verificado" in datos or "estado" in datos:
         verificado = datos.get("verificado", pago.verificado)
         estado = datos.get("estado", pago.estado)
         if verificado and estado not in ["Validado", "Rechazado"]:
             raise HTTPException(
-                status_code=400, detail="Un pago verificado solo puede tener estado 'Validado' o 'Rechazado'"
+                status_code=400,
+                detail="Un pago verificado solo puede tener estado 'Validado' o 'Rechazado'",
             )
 
     for key, value in datos.items():
@@ -118,6 +118,10 @@ def filtrar_pagos(
         query = query.filter(models.Pago.estado == estado)
     if fecha_inicio and fecha_fin:
         query = query.filter(and_(models.Pago.fecha_pago >= fecha_inicio, models.Pago.fecha_pago <= fecha_fin))
+    elif fecha_inicio:
+        query = query.filter(models.Pago.fecha_pago >= fecha_inicio)
+    elif fecha_fin:
+        query = query.filter(models.Pago.fecha_pago <= fecha_fin)
 
     pagos = query.order_by(models.Pago.fecha_pago.desc()).all()
     if not pagos:
@@ -125,17 +129,16 @@ def filtrar_pagos(
     return pagos
 
 
-# ---- Validar o rechazar pago ----
 def actualizar_estado_pago(db: Session, id_pago: int, nuevo_estado: str, verificado: bool = False):
     pago = obtener_pago_por_id(db, id_pago)
 
     if nuevo_estado not in ["Pendiente", "Validado", "Rechazado"]:
         raise HTTPException(status_code=400, detail="Estado de pago inválido")
 
-    # ---- Validación (1): coherencia entre verificado y estado ----
     if verificado and nuevo_estado not in ["Validado", "Rechazado"]:
         raise HTTPException(
-            status_code=400, detail="Un pago verificado solo puede tener estado 'Validado' o 'Rechazado'"
+            status_code=400,
+            detail="Un pago verificado solo puede tener estado 'Validado' o 'Rechazado'",
         )
 
     pago.estado = nuevo_estado
@@ -145,7 +148,6 @@ def actualizar_estado_pago(db: Session, id_pago: int, nuevo_estado: str, verific
     return guardar_y_refrescar(db, pago)
 
 
-# ---- Totales y resumen de pagos ----
 def obtener_resumen_pagos(db: Session):
     resumen = (
         db.query(
@@ -160,6 +162,8 @@ def obtener_resumen_pagos(db: Session):
     if not resumen:
         raise HTTPException(status_code=404, detail="No hay pagos para generar resumen")
 
+    # Mantener Decimal en total_pagado
     return [
-        {"estado": r.estado, "cantidad": int(r.cantidad), "total_pagado": float(r.total_pagado or 0)} for r in resumen
+        {"estado": r.estado, "cantidad": int(r.cantidad), "total_pagado": Decimal(r.total_pagado or 0)}
+        for r in resumen
     ]

@@ -4,10 +4,10 @@ from decimal import Decimal
 from datetime import datetime
 
 # ----- Literales -----
-
 EstadoPago = Literal["Pendiente", "Validado", "Rechazado"]
 MonedaPago = Literal["USD", "VES"]
 MetodoPago = Literal["Transferencia", "Efectivo", "Pago Móvil"]
+
 
 # ====================
 # ---- Esquemas ----
@@ -54,6 +54,11 @@ class PagoBase(BaseModel):
         return v
 
 
+# ==============================
+# ---- CREAR / ACTUALIZAR ----
+# ==============================
+
+
 class PagoCreate(PagoBase):
     id_residente: int
     monto: Decimal
@@ -67,6 +72,11 @@ class PagoUpdate(PagoBase):
     id_residente: Optional[int] = None
 
 
+# ==============================
+# ---- RESPUESTA GENERAL ----
+# ==============================
+
+
 class PagoOut(PagoBase):
     id: int
     id_residente: int
@@ -75,3 +85,13 @@ class PagoOut(PagoBase):
 
     class Config:
         from_attributes = True
+
+
+# ==============================
+# ---- VALIDACIÓN ADMIN ----
+# ==============================
+
+
+class PagoValidacion(BaseModel):
+    estado: EstadoPago
+    verificado: bool = True
