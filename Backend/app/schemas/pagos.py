@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, Literal
 from decimal import Decimal
 from datetime import datetime
@@ -26,6 +26,8 @@ class PagoBase(BaseModel):
     verificado: Optional[bool] = False
     id_apartamento: Optional[int] = None
     id_reporte_financiero: Optional[int] = None
+    id_gasto_fijo: Optional[int] = None
+    id_gasto_variable: Optional[int] = None
 
     # ----- Validaciones -----
 
@@ -52,6 +54,20 @@ class PagoBase(BaseModel):
         if v is not None and v > datetime.now():
             raise ValueError("La fecha de pago no puede ser futura")
         return v
+
+    @field_validator("comprobante")
+    def comprobante_requerido_para_transferencia(cls, v, info):
+        metodo = info.data.get("metodo")
+        if metodo == "Transferencia" and not v:
+            raise ValueError("Comprobante requerido para pagos por transferencia")
+        return v
+
+    @model_validator(mode="after")
+    def validar_gastos(cls, values):
+        # Validar que no se asignen ambos tipos de gasto
+        if values.id_gasto_fijo and values.id_gasto_variable:
+            raise ValueError("No se puede asignar tanto gasto fijo como variable al mismo pago")
+        return values
 
 
 # ==============================

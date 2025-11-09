@@ -4,8 +4,6 @@ from ... import schemas, crud, models
 from ...database import get_db
 from ...core.security import verificar_residente
 
-from ...utils.auditoria_decorator import auditar_completo
-
 router = APIRouter(prefix="/perfil", tags=["Usuario - Perfil y Gestión"])
 
 

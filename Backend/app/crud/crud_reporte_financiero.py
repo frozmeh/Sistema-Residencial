@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
 from . import models, schemas
-from ..utils.auditoria_decorator import auditar_completo
 
 
 # ==============================

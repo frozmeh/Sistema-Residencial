@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 from fastapi import HTTPException
 from datetime import datetime
-from ..utils.auditoria_decorator import auditar_completo
 
 
 # ========================

@@ -49,7 +49,8 @@ class Pago(Base):
     id_residente = Column(Integer, ForeignKey("residentes.id"), nullable=False)
     id_apartamento = Column(Integer, ForeignKey("apartamentos.id"), nullable=True)
     id_reporte_financiero = Column(Integer, ForeignKey("reportes_financieros.id"), nullable=True)
-    # id_gasto = Column(Integer, ForeignKey("gastos.id"), nullable=True)  # ← Reservado para integración futura
+    id_gasto_fijo = Column(Integer, ForeignKey("gastos_fijos.id"), nullable=True)
+    id_gasto_variable = Column(Integer, ForeignKey("gastos_variables.id"), nullable=True)
 
     monto = Column(DECIMAL(12, 2), nullable=False)  # Monto total pagado
     moneda = Column(Enum(MonedaEnum), nullable=False)  # USD o VES
@@ -68,7 +69,10 @@ class Pago(Base):
     residente = relationship("Residente", back_populates="pagos")
     apartamento = relationship("Apartamento", back_populates="pagos")
     reporte_financiero = relationship("ReporteFinanciero", back_populates="pagos")
-    # gasto = relationship("Gasto", back_populates="pagos")  # ← Activar si se enlaza con módulo de gastos
+    gasto_fijo = relationship("GastoFijo", back_populates="pagos")  # ← Activar si se enlaza con módulo de gastos
+    gasto_variable = relationship(
+        "GastoVariable", back_populates="pagos"
+    )  # ← Activar si se enlaza con módulo de gastos
 
     # Índices para mejorar rendimiento en búsquedas frecuentes
     __table_args__ = (

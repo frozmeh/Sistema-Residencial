@@ -3,7 +3,6 @@ from . import models, schemas
 from fastapi import HTTPException
 from datetime import datetime, date, time
 from ..utils.db_helpers import guardar_y_refrescar
-from ..utils.auditoria_decorator import auditar_completo
 
 
 # ==================

@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import date
 from typing import List, Optional
 from .. import models, schemas
-from ..utils.tasa_bcv import obtener_tasa_bcv
+from ..utils.tasa_bcv import obtener_tasa_bcv, obtener_tasa_historica_bcv
 from ..utils.auditoria_helpers import registrar_auditoria
 from ..utils.db_helpers import guardar_y_refrescar
 
@@ -38,17 +38,35 @@ def obtener_apartamentos_desde_pisos_torres(
     return list(apartamentos)
 
 
-def calcular_montos(monto_usd: Optional[Decimal], monto_bs: Optional[Decimal], tasa_bcv: Decimal):
+def calcular_montos(
+    monto_usd: Optional[Decimal],
+    monto_bs: Optional[Decimal],
+    tasa_bcv: Decimal,
+    fecha: date,
+    usar_tasa_historica: bool = True,
+):
     """
     Calcula y devuelve ambos montos (USD y Bs) usando la tasa BCV actual.
     """
+
     if monto_usd is None and monto_bs is None:
         raise HTTPException(status_code=400, detail="Debe proporcionar monto en USD o Bs")
+
+    if usar_tasa_historica:
+        from ..utils.tasa_bcv import obtener_tasa_historica_bcv
+
+        tasa_bcv, fecha_tasa = obtener_tasa_historica_bcv(fecha)
+    else:
+        from ..utils.tasa_bcv import obtener_tasa_bcv
+
+        tasa_bcv, fecha_tasa = obtener_tasa_bcv()
+
     if monto_usd is None:
         monto_usd = Decimal(str(monto_bs)) / tasa_bcv
     if monto_bs is None:
         monto_bs = Decimal(str(monto_usd)) * tasa_bcv
-    return round(monto_usd, 2), round(monto_bs, 2)
+
+    return round(monto_usd, 2), round(monto_bs, 2), tasa_bcv, fecha_tasa
 
 
 def asignar_montos_a_apartamentos(
@@ -123,7 +141,10 @@ def crear_gasto_fijo(db: Session, gasto: schemas.GastoFijoCreate, usuario_actual
     """
     Crea un gasto fijo, ya sea para un apartamento específico o distribuido entre todos.
     """
-    tasa_bcv, fecha_tasa = obtener_tasa_bcv()
+    fecha_gasto = gasto.fecha_creacion or date.today()
+    monto_usd, monto_bs, tasa_bcv, fecha_tasa = calcular_montos(
+        gasto.monto_usd, gasto.monto_bs, fecha_gasto, usar_tasa_historica=True
+    )
 
     # Caso 1: Gasto asociado a un solo apartamento
     if gasto.id_apartamento:
@@ -137,6 +158,7 @@ def crear_gasto_fijo(db: Session, gasto: schemas.GastoFijoCreate, usuario_actual
             tipo_gasto=gasto.tipo_gasto,
             monto_usd=monto_usd,
             monto_bs=monto_bs,
+            tasa_cambio=tasa_bcv,
             descripcion=gasto.descripcion,
             responsable=gasto.responsable,
             id_reporte_financiero=gasto.id_reporte_financiero,
@@ -224,10 +246,11 @@ def obtener_gastos_fijos(
     id_apartamento: Optional[int] = None,
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
-    actualizar_tasa: bool = True,
+    actualizar_tasa: bool = False,
 ) -> List[models.GastoFijo]:
     """
     Retorna los gastos fijos filtrados opcionalmente por responsable, apartamento o fechas.
+    No actualiza tasas por defecto (mantiene valores históricos)
     """
     consulta = db.query(models.GastoFijo)
     if responsable:
@@ -239,6 +262,7 @@ def obtener_gastos_fijos(
 
     gastos = consulta.all()
 
+    # Solo actualizar si se solicita explícitamente
     if actualizar_tasa and gastos:
         tasa, fecha_tasa = obtener_tasa_bcv()
         for g in gastos:
@@ -247,6 +271,7 @@ def obtener_gastos_fijos(
             elif g.monto_bs:
                 g.monto_usd = round(g.monto_bs / tasa, 2)
             g.fecha_tasa_bcv = fecha_tasa
+
     return gastos
 
 
@@ -392,8 +417,10 @@ def procesar_gasto_variable(
     return gasto
 
 
-def crear_gasto_variable(db: Session, gasto_datos: schemas.GastoVariableCreate) -> models.GastoVariable:
-    return procesar_gasto_variable(db, gasto_datos)
+def crear_gasto_variable(
+    db: Session, gasto_datos: schemas.GastoVariableCreate, usuario_actual=None, request=None
+) -> models.GastoVariable:
+    return procesar_gasto_variable(db, gasto_datos, usuario_actual=usuario_actual, request=request)
 
 
 def obtener_gastos_variables(

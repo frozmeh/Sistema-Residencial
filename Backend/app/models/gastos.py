@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Date, func, DECIMAL, Table, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, Date, func, DECIMAL, Table, DateTime, Numeric
+
 from sqlalchemy.orm import relationship
 from ..database import Base
 
@@ -18,9 +19,11 @@ class GastoFijo(Base):
     descripcion = Column(String, nullable=True)
     responsable = Column(String, nullable=False)
 
-    monto_usd = Column(DECIMAL(12, 2), nullable=False)
-    monto_bs = Column(DECIMAL(12, 2), nullable=False)
-    tasa_cambio = Column(DECIMAL(10, 4), nullable=False)  # Tasa BCV del día
+    monto_usd = Column(Numeric(12, 2), nullable=False)
+    monto_bs = Column(Numeric(12, 2), nullable=False)
+    tasa_cambio = Column(Numeric(10, 4), nullable=False)
+    monto_pagado = Column(Numeric(12, 2), default=0, nullable=False)
+    saldo_pendiente = Column(Numeric(12, 2), nullable=False)
 
     fecha_creacion = Column(Date, default=func.current_date(), index=True)
     fecha_tasa_bcv = Column(DateTime, nullable=True)
@@ -28,6 +31,12 @@ class GastoFijo(Base):
     # Relaciones
     reporte_financiero = relationship("ReporteFinanciero", back_populates="gastos_fijos")
     apartamento = relationship("Apartamento", back_populates="gastos_fijos")
+    pagos = relationship("Pago", back_populates="gasto_fijo")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Calcular saldo pendiente inicial
+        self.saldo_pendiente = self.monto_usd
 
 
 # ========================================
@@ -40,8 +49,8 @@ gastos_variables_apartamentos = Table(
     Column("id", Integer, primary_key=True),
     Column("id_gasto_variable", Integer, ForeignKey("gastos_variables.id", ondelete="CASCADE")),
     Column("id_apartamento", Integer, ForeignKey("apartamentos.id", ondelete="CASCADE")),
-    Column("monto_asignado_usd", DECIMAL(12, 2), nullable=False),
-    Column("monto_asignado_bs", DECIMAL(12, 2), nullable=False),
+    Column("monto_asignado_usd", Numeric(12, 2), nullable=False),
+    Column("monto_asignado_bs", Numeric(12, 2), nullable=False),
 )
 
 
@@ -61,9 +70,11 @@ class GastoVariable(Base):
     descripcion = Column(String, nullable=True)
     responsable = Column(String, nullable=False)
 
-    monto_usd = Column(DECIMAL(12, 2), nullable=False)
-    monto_bs = Column(DECIMAL(12, 2), nullable=False)
-    tasa_cambio = Column(DECIMAL(10, 4), nullable=False)
+    monto_usd = Column(Numeric(12, 2), nullable=False)
+    monto_bs = Column(Numeric(12, 2), nullable=False)
+    tasa_cambio = Column(Numeric(10, 4), nullable=False)
+    monto_pagado = Column(Numeric(12, 2), default=0, nullable=False)
+    saldo_pendiente = Column(Numeric(12, 2), nullable=False)
 
     fecha_creacion = Column(Date, default=func.current_date(), index=True)
     fecha_tasa_bcv = Column(DateTime, nullable=True)
@@ -71,8 +82,14 @@ class GastoVariable(Base):
     # Relaciones
     reporte_financiero = relationship("ReporteFinanciero", back_populates="gastos_variables")
     residente = relationship("Residente", back_populates="gastos_variables")
+    pagos = relationship("Pago", back_populates="gasto_variable")
 
     # Relación muchos a muchos con apartamentos
     apartamentos = relationship(
         "Apartamento", secondary=gastos_variables_apartamentos, back_populates="gastos_variables"
     )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Calcular saldo pendiente inicial
+        self.saldo_pendiente = self.monto_usd

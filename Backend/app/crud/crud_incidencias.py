@@ -4,7 +4,6 @@ from . import models, schemas
 from fastapi import HTTPException
 from typing import Optional, List
 from datetime import date
-from ..utils.auditoria_decorator import auditar_completo
 
 
 # =====================

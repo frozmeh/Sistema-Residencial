@@ -17,8 +17,8 @@ class GastoBase(BaseModel):
     monto_bs: Optional[float] = None
     tasa_cambio: Optional[float] = None
     id_reporte_financiero: Optional[int] = None
-    fecha_creacion: Optional[date] = None
-    fecha_tasa_bcv: Optional[datetime] = None
+    monto_pagado: Optional[float] = 0
+    saldo_pendiente: Optional[float] = None
 
     # --- Validaciones de contenido ---
     @field_validator("tipo_gasto", "responsable")
@@ -36,17 +36,27 @@ class GastoBase(BaseModel):
     # --- Cálculos automáticos con tasa BCV ---
     @model_validator(mode="after")
     def calcular_tasas_automaticas(cls, values):
-        tasa = obtener_tasa_bcv()
+        from decimal import Decimal
+        from ..utils.tasa_bcv import obtener_tasa_historica_bcv
 
-        # Solo calcular si falta un monto
+        # Usar tasa de la fecha del gasto, no la actual
+        fecha_gasto = values.fecha_creacion or date.today()
+        tasa, fecha_tasa = obtener_tasa_historica_bcv(fecha_gasto)
+        tasa_decimal = Decimal(str(tasa))
+
         if values.monto_usd is not None and values.monto_bs is None:
-            values.monto_bs = round(values.monto_usd * tasa, 2)
+            values.monto_bs = float(Decimal(str(values.monto_usd)) * tasa_decimal)
         elif values.monto_bs is not None and values.monto_usd is None:
-            values.monto_usd = round(values.monto_bs / tasa, 2)
+            values.monto_usd = float(Decimal(str(values.monto_bs)) / tasa_decimal)
         elif values.monto_usd is None and values.monto_bs is None:
             raise ValueError("Debe proporcionar al menos un monto (USD o Bs)")
 
-        values.tasa_cambio = tasa
+        values.tasa_cambio = float(tasa_decimal)
+        values.fecha_tasa_bcv = fecha_tasa
+
+        if values.saldo_pendiente is None and values.monto_usd is not None:
+            values.saldo_pendiente = values.monto_usd
+
         return values
 
 
@@ -62,6 +72,8 @@ class GastoFijoCreate(GastoBase):
 class GastoFijoOut(GastoBase):
     id: int
     id_apartamento: Optional[int] = None
+    monto_pagado: Optional[float] = None
+    saldo_pendiente: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -83,6 +95,8 @@ class GastoVariableOut(GastoBase):
     id: int
     id_residente: Optional[int] = None
     apartamentos: Optional[List[int]] = None  # lista de IDs asociados
+    monto_pagado: Optional[float] = None
+    saldo_pendiente: Optional[float] = None
 
     class Config:
         from_attributes = True
