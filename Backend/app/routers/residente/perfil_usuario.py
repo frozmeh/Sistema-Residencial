@@ -12,12 +12,12 @@ router = APIRouter(prefix="/perfil", tags=["Usuario - Perfil y Gestión"])
 # =====================================
 
 
-@router.get("/me", response_model=schemas.UsuarioOut)
+@router.get("/me", response_model=schemas.UsuarioResidenteOut)
 def obtener_mis_datos(usuario=Depends(verificar_residente), db: Session = Depends(get_db)):
     return crud.obtener_usuario_por_id(db, usuario.id)
 
 
-@router.put("/me", response_model=schemas.UsuarioOut)
+@router.put("/me", response_model=schemas.UsuarioResidenteOut)
 def actualizar_mis_datos(
     datos: schemas.UsuarioUpdate,
     db: Session = Depends(get_db),
@@ -27,7 +27,7 @@ def actualizar_mis_datos(
     return crud.actualizar_usuario(db, usuario.id, datos.nombre, datos.email, usuario_actual=usuario, request=request)
 
 
-@router.put("/me/password", response_model=schemas.UsuarioEstadoResponse)
+@router.put("/me/password", response_model=schemas.UsuarioResidenteOut)
 def cambiar_mi_password(
     datos: schemas.UsuarioUpdate,
     usuario=Depends(verificar_residente),

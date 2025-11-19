@@ -142,4 +142,4 @@ def verificar_residente(usuario: Usuario = Depends(get_usuario_actual), db: Sess
     if residente.estado_operativo != "Activo":
         raise HTTPException(status_code=403, detail="Residente inactivo o suspendido.")
 
-    return residente
+    return usuario

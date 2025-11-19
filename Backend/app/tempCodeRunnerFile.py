@@ -1,1 +1,1 @@
-sesión
+total

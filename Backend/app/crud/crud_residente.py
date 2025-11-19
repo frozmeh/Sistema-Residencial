@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy import func
 from typing import Optional
 from sqlalchemy.orm import Session, aliased
@@ -48,7 +48,7 @@ def validar_unicidad_residente(db: Session, cedula: str = None, correo: str = No
 # ====================
 
 
-def crear_residente(db: Session, datos: schemas.ResidenteCreate, id_usuario: int, request=None):
+def crear_residente(db: Session, datos: schemas.ResidenteCreate, id_usuario: int, request=None, usuario_actual=None):
     # Normalizar entradas
     torre_nombre = datos.torre.strip() if datos.torre else ""
     numero_apto = str(datos.numero_apartamento).strip()
@@ -78,6 +78,22 @@ def crear_residente(db: Session, datos: schemas.ResidenteCreate, id_usuario: int
     if apartamento.estado.lower() == "ocupado":
         raise HTTPException(status_code=400, detail="El apartamento ya está ocupado por otro residente")
 
+    # Verificar que no exista otro residente en el apartamento
+    residente_existente = (
+        db.query(models.Residente)
+        .filter(
+            models.Residente.id_apartamento == apartamento.id,
+            models.Residente.estado_aprobacion.in_(["Pendiente", "Corrección Requerida", "Aprobado"]),
+        )
+        .first()
+    )
+
+    if residente_existente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El apartamento ya tiene un residente asignado: {residente_existente.nombre} (estado: {residente_existente.estado_aprobacion})",
+        )
+
     # Validar que el usuario no tenga ya un residente asociado
     if db.query(models.Residente).filter(models.Residente.id_usuario == id_usuario).first():
         raise HTTPException(status_code=400, detail="El usuario ya tiene un residente asociado.")
@@ -96,44 +112,51 @@ def crear_residente(db: Session, datos: schemas.ResidenteCreate, id_usuario: int
         reside_actualmente=False,
     )
 
-    try:
-        db.add(nuevo_residente)
-        guardar_y_refrescar(db, nuevo_residente)
+    db.add(nuevo_residente)
+    guardar_y_refrescar(db, nuevo_residente)
 
-        # Registro de nuevo residente
-        registrar_auditoria(
-            db=db,
-            usuario_id=id_usuario,
-            usuario_nombre=datos.nombre,
-            accion="Registro inicial de residente",
-            tabla="residentes",
-            objeto_previo=None,
-            objeto_nuevo={c.name: getattr(nuevo_residente, c.name) for c in nuevo_residente.__table__.columns},
-            request=request,
-            campos_visibles=["nombre", "cedula", "correo", "tipo_residente", "estado_aprobacion", "fecha_registro"],
-            forzar=True,
-        )
+    # Registro de nuevo residente
+    registrar_auditoria(
+        db=db,
+        usuario_id=id_usuario,
+        usuario_nombre=usuario_actual.nombre,
+        accion="Registro inicial de residente",
+        tabla="residentes",
+        objeto_previo=None,
+        objeto_nuevo={c.name: getattr(nuevo_residente, c.name) for c in nuevo_residente.__table__.columns},
+        request=request,
+        campos_visibles=[
+            "nombre",
+            "cedula",
+            "correo",
+            "telefono",
+            "tipo_residente",
+            "estado_aprobacion",
+            "fecha_registro",
+        ],
+        forzar=True,
+    )
 
-        return nuevo_residente
-    except IntegrityError as error:
-        db.rollback()
-        if "unique constraint" in str(error).lower():
-            if "cedula" in str(error).lower():
-                raise HTTPException(status_code=400, detail="La cédula ya está registrada en el sistema")
-            elif "correo" in str(error).lower():
-                raise HTTPException(status_code=400, detail="El correo electrónico ya está registrado")
-            elif "id_usuario" in str(error).lower():
-                raise HTTPException(status_code=400, detail="El usuario ya tiene un residente asociado")
-        raise HTTPException(status_code=400, detail="Error de duplicación en la base de datos")
+    return nuevo_residente
 
 
-def verificar_apartamento_disponible(db: Session, apartamento_id: int):
+def verificar_apartamento_disponible(db: Session, apartamento_id: int, residente: models.Residente):
     apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == apartamento_id).first()
     if not apartamento:
         raise HTTPException(status_code=404, detail="Apartamento no encontrado")
 
-    if apartamento.estado.lower() == "ocupado":
-        raise HTTPException(status_code=400, detail="El apartamento ya está ocupado")
+    otro_residente = (
+        db.query(models.Residente)
+        .filter(
+            models.Residente.id_apartamento == apartamento.id,
+            models.Residente.id != residente.id,
+            models.Residente.estado_aprobacion == "Aprobado",
+        )
+        .first()
+    )
+
+    if otro_residente:
+        raise HTTPException(status_code=400, detail=f"El apartamento ya está ocupado por {otro_residente.nombre}")
 
     return apartamento
 
@@ -141,24 +164,36 @@ def verificar_apartamento_disponible(db: Session, apartamento_id: int):
 def aprobar_residente(db: Session, id_residente: int, usuario_actual=None, request=None):
     residente = get_residente_or_404(db, id_residente)
 
+    if residente.estado_aprobacion == "Aprobado":
+        raise HTTPException(status_code=400, detail="El residente ya está aprobado")
+
+    if residente.estado_aprobacion == "Rechazado":
+        raise HTTPException(status_code=400, detail="No se puede aprobar un residente rechazado")
+
     if not residente.id_apartamento:
         raise HTTPException(status_code=400, detail="El residente no tiene apartamento asignado para aprobar")
 
-    apartamento = verificar_apartamento_disponible(db, residente.id_apartamento)
+    apartamento = verificar_apartamento_disponible(db, residente.id_apartamento, residente)
 
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
     apartamento_previo = {c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns}
 
-    # Aprobar residente
-    residente.estado_aprobacion = "Aprobado"
-    residente.estado_operativo = "Activo"
-    residente.reside_actualmente = True
-    apartamento.estado = "Ocupado"
+    try:
+        # Aprobar residente
+        residente.estado_aprobacion = "Aprobado"
+        residente.estado_operativo = "Activo"
+        residente.reside_actualmente = True
+        apartamento.estado = "Ocupado"
 
-    db.commit()
+        db.commit()
+        db.refresh(residente)
+        db.refresh(apartamento)
 
-    # Aprobación de residente
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al aprobar residente: {str(e)}")
+
     if usuario_actual:
         registrar_auditoria(
             db=db,
@@ -171,63 +206,233 @@ def aprobar_residente(db: Session, id_residente: int, usuario_actual=None, reque
             request=request,
         )
 
-        # Cambio de estado del apartamento
         registrar_auditoria(
             db=db,
             usuario_id=usuario_actual.id,
             usuario_nombre=usuario_actual.nombre,
-            accion="Asignación de apartamento",
+            accion="Cambio de estado de apartamento a Ocupado",
             tabla="apartamentos",
             objeto_previo=apartamento_previo,
             objeto_nuevo={c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns},
             request=request,
         )
 
-    return {"mensaje": f"Residente {residente.nombre} aprobado correctamente", "residente": residente}
+    return residente
 
 
-def rechazar_residente(
+def solicitar_correccion_residente(
     db: Session,
     id_residente: int,
-    motivo: str = "Registro rechazado por el administrador.",
+    motivo: str = "Se requiere corrección de datos.",
     usuario_actual=None,
     request=None,
 ):
     residente = get_residente_or_404(db, id_residente)
 
+    # Validaciones
+    if residente.estado_aprobacion == "Corrección Requerida":
+        raise HTTPException(status_code=400, detail="Ya se solicitó corrección para este residente")
+
+    if residente.estado_aprobacion == "Rechazado":
+        raise HTTPException(
+            status_code=400, detail="No se puede solicitar corrección a un residente rechazado permanentemente"
+        )
+
+    if residente.estado_aprobacion == "Aprobado":
+        raise HTTPException(status_code=400, detail="No se puede solicitar corrección a un residente ya aprobado")
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
 
-    residente.estado_aprobacion = "Rechazado"
-    residente.estado_operativo = "Inactivo"
-    residente.reside_actualmente = False
+    try:
+        # Cambiar estado a corrección requerida
+        residente.estado_aprobacion = "Corrección Requerida"
+        residente.estado_operativo = "Inactivo"
+        residente.reside_actualmente = False
+        # NO liberar apartamento - mantener asignación para corrección
 
-    db.commit()
+        db.commit()
+        db.refresh(residente)
 
-    # Rechazo de residente
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al solicitar corrección: {str(e)}")
+
+    # Auditoría
     if usuario_actual:
         registrar_auditoria(
             db=db,
             usuario_id=usuario_actual.id,
             usuario_nombre=usuario_actual.nombre,
-            accion=f"Rechazo de residente: {motivo}",
+            accion=f"Solicitud de corrección: {motivo}",
+            tabla="residentes",
+            objeto_previo=residente_previo,
+            objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
+            request=request,
+            campos_visibles=[
+                "nombre",
+                "cedula",
+                "correo",
+                "telefono",
+                "tipo_residente",
+                "estado_aprobacion",
+                "estado_operativo",
+            ],
+        )
+
+    return {
+        "mensaje": f"Se solicitó corrección: {motivo}",
+        "residente_id": residente.id,
+        "estado_aprobacion": residente.estado_aprobacion,
+    }
+
+
+def rechazar_residente_permanentemente(
+    db: Session,
+    id_residente: int,
+    motivo: str = "Registro rechazado permanentemente.",
+    usuario_actual=None,
+    request=None,
+):
+    residente = get_residente_or_404(db, id_residente)
+
+    # Validaciones
+    if residente.estado_aprobacion == "Rechazado":
+        raise HTTPException(status_code=400, detail="El residente ya está rechazado permanentemente")
+
+    # Guardar estados previos para auditoría
+    residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
+    apartamento_previo = None
+
+    # Obtener apartamento si existe
+    apartamento = None
+    if residente.id_apartamento:
+        apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
+        if apartamento:
+            apartamento_previo = {c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns}
+
+    try:
+        # Rechazar residente permanentemente
+        residente.estado_aprobacion = "Rechazado"
+        residente.estado_operativo = "Inactivo"
+        residente.reside_actualmente = False
+
+        # Liberar apartamento si existe
+        if residente.id_apartamento and apartamento:
+            apartamento.estado = "Disponible"
+            # Opcional: desasignar completamente
+            residente.id_apartamento = None
+
+        db.commit()
+        db.refresh(residente)
+        if apartamento:
+            db.refresh(apartamento)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al rechazar residente: {str(e)}")
+
+    # Auditorías
+    if usuario_actual:
+        # Auditoría para residente
+        registrar_auditoria(
+            db=db,
+            usuario_id=usuario_actual.id,
+            usuario_nombre=usuario_actual.nombre,
+            accion=f"Rechazo permanente: {motivo}",
+            tabla="residentes",
+            objeto_previo=residente_previo,
+            objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
+            request=request,
+            campos_visibles=["nombre", "cedula", "correo", "tipo_residente", "estado_aprobacion", "estado_operativo"],
+        )
+
+        # Auditoría para apartamento si se liberó
+        if apartamento_previo and apartamento:
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Liberación de apartamento por rechazo permanente de residente",
+                tabla="apartamentos",
+                objeto_previo=apartamento_previo,
+                objeto_nuevo={c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns},
+                request=request,
+            )
+
+    return {"mensaje": motivo, "residente_id": residente.id, "apartamento_liberado": apartamento is not None}
+
+
+def reenviar_para_aprobacion(
+    db: Session,
+    id_residente: int,
+    usuario_actual=None,
+    request=None,
+):
+    """Permite que un residente en 'Corrección Requerida' vuelva a 'Pendiente'"""
+    residente = get_residente_or_404(db, id_residente)
+
+    if residente.estado_aprobacion != "Corrección Requerida":
+        raise HTTPException(
+            status_code=400, detail="Solo residentes con 'Corrección Requerida' pueden reenviarse para aprobación"
+        )
+
+    # Guardar estado previo para auditoría
+    residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
+
+    try:
+        residente.estado_aprobacion = "Pendiente"
+
+        db.commit()
+        db.refresh(residente)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al reenviar para aprobación: {str(e)}")
+
+    # Auditoría
+    if usuario_actual:
+        registrar_auditoria(
+            db=db,
+            usuario_id=usuario_actual.id,
+            usuario_nombre=usuario_actual.nombre,
+            accion="Reenvío para aprobación después de corrección",
             tabla="residentes",
             objeto_previo=residente_previo,
             objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
             request=request,
         )
 
-    return {"mensaje": motivo}
+    return {
+        "mensaje": "Residente reenviado para aprobación exitosamente",
+        "residente_id": residente.id,
+        "estado_aprobacion": residente.estado_aprobacion,
+    }
 
 
 def suspender_residente(db: Session, id_residente: int, usuario_actual=None, request=None):
     residente = get_residente_or_404(db, id_residente)
 
+    if residente.estado_operativo == "Suspendido":
+        raise HTTPException(status_code=400, detail="El residente ya está suspendido")
+
+    if residente.estado_aprobacion != "Aprobado":
+        raise HTTPException(
+            status_code=400, detail=f"No se puede suspender un residente con estado: {residente.estado_aprobacion}"
+        )
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
 
-    residente.estado_operativo = "Suspendido"
-    guardar_y_refrescar(db, residente)
+    try:
+        residente.estado_operativo = "Suspendido"
+
+        db.commit()
+        db.refresh(residente)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al suspender residente: {str(e)}")
 
     # Suspensión de residente
     if usuario_actual:
@@ -248,11 +453,26 @@ def suspender_residente(db: Session, id_residente: int, usuario_actual=None, req
 def reactivar_residente(db: Session, id_residente: int, usuario_actual=None, request=None):
     residente = get_residente_or_404(db, id_residente)
 
+    if residente.estado_operativo == "Activo":
+        raise HTTPException(status_code=400, detail="El residente ya está activo")
+
+    if residente.estado_aprobacion != "Aprobado":
+        raise HTTPException(
+            status_code=400, detail=f"No se puede reactivar un residente con estado: {residente.estado_aprobacion}"
+        )
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
 
-    residente.estado_operativo = "Activo"
-    guardar_y_refrescar(db, residente)
+    try:
+        residente.estado_operativo = "Activo"
+
+        db.commit()
+        db.refresh(residente)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al reactivar residente: {str(e)}")
 
     # Reactivación de residente
     if usuario_actual:
@@ -270,15 +490,6 @@ def reactivar_residente(db: Session, id_residente: int, usuario_actual=None, req
     return residente
 
 
-def obtener_residentes(db: Session):
-    return db.query(models.Residente).order_by(models.Residente.id.asc()).all()
-
-
-def obtener_residente_por_id(db: Session, id_residente: int):
-    residente = get_residente_or_404(db, id_residente)
-    return residente
-
-
 def actualizar_residente(
     db: Session,
     id_residente: int,
@@ -288,61 +499,125 @@ def actualizar_residente(
 ):
     residente = obtener_residente_por_id(db, id_residente)
 
+    # Validación de estado
+    if residente.estado_aprobacion == "Rechazado":
+        raise HTTPException(status_code=400, detail="No se puede actualizar un residente rechazado permanentemente")
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
 
     update_data = datos_actualizados.dict(exclude_unset=True)
-    validar_unicidad_residente(db, update_data.get("cedula"), update_data.get("correo"), id_residente)
 
-    for key, value in update_data.items():
-        setattr(residente, key, value)
+    if "cedula" in update_data or "correo" in update_data:
+        validar_unicidad_residente(db, update_data.get("cedula"), update_data.get("correo"), id_residente)
 
     try:
-        guardar_y_refrescar(db, residente)
+        # Actualizar campos
+        for key, value in update_data.items():
+            setattr(residente, key, value)
 
-        # Actualización de datos de residente
-        if usuario_actual:
+        db.commit()
+        db.refresh(residente)
+
+        campos_modificados = []
+        for key in update_data:
+            if getattr(residente_previo, key, None) != getattr(residente, key, None):
+                campos_modificados.append(key)
+
+        if usuario_actual and campos_modificados:
             registrar_auditoria(
                 db=db,
                 usuario_id=usuario_actual.id,
                 usuario_nombre=usuario_actual.nombre,
-                accion="Actualización de datos de residente",
+                accion=f"Actualización de datos de residente: {', '.join(campos_modificados)}",
                 tabla="residentes",
                 objeto_previo=residente_previo,
                 objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
                 request=request,
+                campos_visibles=campos_modificados,
             )
 
         return residente
+
     except IntegrityError as error:
         db.rollback()
-        if "unique constraint" in str(error).lower():
-            if "cedula" in str(error).lower():
-                raise HTTPException(status_code=400, detail="La cédula ya está registrada")
-            elif "correo" in str(error).lower():
-                raise HTTPException(status_code=400, detail="El correo ya está registrado")
-        raise HTTPException(status_code=400, detail="Error de duplicación en la base de datos")
+        raise HTTPException(
+            status_code=400, detail="Error de duplicación en la base de datos. Verifique cédula o correo."
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error inesperado al actualizar residente: {str(e)}")
 
 
 def eliminar_residente(db: Session, id_residente: int, usuario_actual=None, request=None):
     residente = obtener_residente_por_id(db, id_residente)
 
+    if residente.estado_aprobacion == "Aprobado":
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar un residente aprobado. Use la función de desasignación en su lugar.",
+        )
+
+    if residente.estado_operativo == "Activo":
+        raise HTTPException(
+            status_code=400, detail="No se puede eliminar un residente activo. Inactive primero al residente."
+        )
+
+    if residente.estado_aprobacion == "Rechazado":
+        # Podría tener historial de solicitudes, pero permitimos eliminación
+        pass
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
 
     # Liberar apartamento si existe
+    apartamento_previo = None
+    apartamento = None
+
     if residente.id_apartamento:
         apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
         if apartamento:
             # Guardar estado previo del apartamento para auditoría
             apartamento_previo = {c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns}
 
+    try:
+        if residente.id_apartamento:
+            residente.id_apartamento = None
+
+        # Liberar apartamento si existe
+        if apartamento:
             apartamento.estado = "Disponible"
             if hasattr(apartamento, "id_residente"):
                 apartamento.id_residente = None
 
-            # Liberación de apartamento
-            if usuario_actual:
+        # Eliminar residente
+        db.delete(residente)
+        db.commit()
+
+        if usuario_actual:
+            # Auditoría para eliminación de residente
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Eliminación de residente del sistema",
+                tabla="residentes",
+                objeto_previo=residente_previo,
+                objeto_nuevo=None,
+                request=request,
+                campos_visibles=[
+                    "nombre",
+                    "cedula",
+                    "correo",
+                    "tipo_residente",
+                    "estado_aprobacion",
+                    "estado_operativo",
+                ],
+            )
+
+            # Auditoría para liberación de apartamento si existía
+            if apartamento_previo and apartamento:
                 registrar_auditoria(
                     db=db,
                     usuario_id=usuario_actual.id,
@@ -354,23 +629,15 @@ def eliminar_residente(db: Session, id_residente: int, usuario_actual=None, requ
                     request=request,
                 )
 
-    db.delete(residente)
-    db.commit()
+        return {
+            "mensaje": f"Residente {residente.nombre} eliminado correctamente del sistema.",
+            "residente_id": id_residente,
+            "apartamento_liberado": apartamento is not None,
+        }
 
-    # Eliminación de residente
-    if usuario_actual:
-        registrar_auditoria(
-            db=db,
-            usuario_id=usuario_actual.id,
-            usuario_nombre=usuario_actual.nombre,
-            accion="Eliminación de residente",
-            tabla="residentes",
-            objeto_previo=residente_previo,
-            objeto_nuevo=None,
-            request=request,
-        )
-
-    return {"mensaje": f"Residente con ID {id_residente} eliminado correctamente."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al eliminar residente: {str(e)}")
 
 
 def asignar_residente_a_apartamento(
@@ -378,12 +645,19 @@ def asignar_residente_a_apartamento(
 ):
     residente = get_residente_or_404(db, id_residente)
 
+    if residente.estado_aprobacion != "Aprobado":
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede asignar apartamento a residente con estado: {residente.estado_aprobacion}",
+        )
+
     apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == id_apartamento).first()
     if not apartamento:
         raise HTTPException(status_code=404, detail="Apartamento no encontrado.")
 
     if residente.id_apartamento:
         raise HTTPException(status_code=400, detail="El residente ya tiene un apartamento asignado.")
+
     if apartamento.estado.lower() == "ocupado":
         raise HTTPException(status_code=400, detail="El apartamento ya está ocupado.")
 
@@ -391,228 +665,166 @@ def asignar_residente_a_apartamento(
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
     apartamento_previo = {c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns}
 
-    residente.id_apartamento = apartamento.id
-    apartamento.estado = "Ocupado"
-    if hasattr(apartamento, "id_residente"):
-        apartamento.id_residente = residente.id
+    try:
+        residente.id_apartamento = apartamento.id
+        apartamento.estado = "Ocupado"
+        if hasattr(apartamento, "id_residente"):
+            apartamento.id_residente = residente.id
 
-    db.commit()
-    db.refresh(residente)
-    db.refresh(apartamento)
+        db.commit()
+        db.refresh(residente)
+        db.refresh(apartamento)
 
-    # Asignación de apartamento
-    if usuario_actual:
-        registrar_auditoria(
-            db=db,
-            usuario_id=usuario_actual.id,
-            usuario_nombre=usuario_actual.nombre,
-            accion="Asignación manual de apartamento a residente",
-            tabla="residentes",
-            objeto_previo=residente_previo,
-            objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
-            request=request,
-        )
+        # Auditorías
+        if usuario_actual:
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Asignación manual de apartamento a residente",
+                tabla="residentes",
+                objeto_previo=residente_previo,
+                objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
+                request=request,
+            )
 
-        registrar_auditoria(
-            db=db,
-            usuario_id=usuario_actual.id,
-            usuario_nombre=usuario_actual.nombre,
-            accion="Cambio de estado de apartamento por asignación",
-            tabla="apartamentos",
-            objeto_previo=apartamento_previo,
-            objeto_nuevo={c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns},
-            request=request,
-        )
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Cambio de estado de apartamento por asignación",
+                tabla="apartamentos",
+                objeto_previo=apartamento_previo,
+                objeto_nuevo={c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns},
+                request=request,
+            )
 
-    return {
-        "mensaje": f"Residente {residente.nombre} asignado al apartamento {apartamento.numero}.",
-        "residente": residente,
-    }
+        return {
+            "mensaje": f"Residente {residente.nombre} asignado al apartamento {apartamento.numero}.",
+            "residente": residente,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al asignar apartamento: {str(e)}")
 
 
 def desasignar_residente(db: Session, id_residente: int, inactivar: bool = False, usuario_actual=None, request=None):
     residente = get_residente_or_404(db, id_residente)
 
+    if not residente.id_apartamento:
+        raise HTTPException(status_code=400, detail="El residente no tiene apartamento asignado.")
+
+    if residente.estado_aprobacion != "Aprobado":
+        raise HTTPException(status_code=400, detail="Solo se pueden desasignar residentes aprobados")
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
+    apartamento_previo = None
+    apartamento = None
 
-    if residente.id_apartamento:
-        apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
-        if apartamento:
-            # Guardar estado previo del apartamento para auditoría
-            apartamento_previo = {c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns}
+    apartamento = db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
+    if not apartamento:
+        raise HTTPException(status_code=404, detail="El apartamento asignado no existe en el sistema")
 
-            apartamento.estado = "Disponible"
-            if hasattr(apartamento, "id_residente"):
-                apartamento.id_residente = None
+    apartamento_previo = {c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns}
 
-            # Liberación de apartamento
-            if usuario_actual:
-                registrar_auditoria(
-                    db=db,
-                    usuario_id=usuario_actual.id,
-                    usuario_nombre=usuario_actual.nombre,
-                    accion="Desasignación de apartamento",
-                    tabla="apartamentos",
-                    objeto_previo=apartamento_previo,
-                    objeto_nuevo={c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns},
-                    request=request,
-                )
+    try:
+        # Liberar apartamento
+        apartamento.estado = "Disponible"
+        if hasattr(apartamento, "id_residente"):
+            apartamento.id_residente = None
+
+        # Liberar relación
         residente.id_apartamento = None
 
-    if inactivar:
-        residente.estado_operativo = "Inactivo"
-        residente.reside_actualmente = False
+        # Inactivar si se solicita
+        if inactivar:
+            residente.estado_operativo = "Inactivo"
+            residente.reside_actualmente = False
 
-    guardar_y_refrescar(db, residente)
+        db.commit()
+        db.refresh(residente)
+        db.refresh(apartamento)
 
-    # Desasignación de residente
-    if usuario_actual:
-        registrar_auditoria(
-            db=db,
-            usuario_id=usuario_actual.id,
-            usuario_nombre=usuario_actual.nombre,
-            accion="Desasignación de residente" + (" con inactivación" if inactivar else ""),
-            tabla="residentes",
-            objeto_previo=residente_previo,
-            objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
-            request=request,
-        )
+        # Auditorías
+        if usuario_actual:
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Desasignación de residente" + (" con inactivación" if inactivar else ""),
+                tabla="residentes",
+                objeto_previo=residente_previo,
+                objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
+                request=request,
+            )
 
-    return {
-        "mensaje": f"Residente {residente.nombre} desasignado correctamente.",
-        "estado_operativo": residente.estado_operativo,
-    }
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Liberación de apartamento por desasignación",
+                tabla="apartamentos",
+                objeto_previo=apartamento_previo,
+                objeto_nuevo={c.name: getattr(apartamento, c.name) for c in apartamento.__table__.columns},
+                request=request,
+            )
+
+        return {
+            "mensaje": f"Residente {residente.nombre} desasignado correctamente."
+            + (" Fue inactivado del sistema." if inactivar else " Permanece activo."),
+            "estado_operativo": residente.estado_operativo,
+            "apartamento_liberado": True,
+            "residente_inactivado": inactivar,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al desasignar residente: {str(e)}")
 
 
 def activar_residente(db: Session, id_residente: int, usuario_actual=None, request=None):
     residente = obtener_residente_por_id(db, id_residente)
 
+    if residente.estado_operativo == "Activo":
+        raise HTTPException(status_code=400, detail="El residente ya está activo")
+
+    if residente.estado_aprobacion != "Aprobado":
+        raise HTTPException(
+            status_code=400, detail=f"No se puede activar un residente con estado: {residente.estado_aprobacion}"
+        )
+
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
 
-    residente.estado_operativo = "Activo"
-    residente.reside_actualmente = True
+    try:
+        residente.estado_operativo = "Activo"
+        residente.reside_actualmente = True
 
-    guardar_y_refrescar(db, residente)
+        guardar_y_refrescar(db, residente)
 
-    # Activación de residente
-    if usuario_actual:
-        registrar_auditoria(
-            db=db,
-            usuario_id=usuario_actual.id,
-            usuario_nombre=usuario_actual.nombre,
-            accion="Activación manual de residente",
-            tabla="residentes",
-            objeto_previo=residente_previo,
-            objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
-            request=request,
-        )
+        # Activación de residente
+        if usuario_actual:
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion="Activación manual de residente",
+                tabla="residentes",
+                objeto_previo=residente_previo,
+                objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
+                request=request,
+            )
 
-    return {
-        "mensaje": f"Residente {residente.nombre} activado correctamente.",
-        "estado_operativo": residente.estado_operativo,
-    }
+        return {
+            "mensaje": f"Residente {residente.nombre} activado correctamente.",
+            "estado_operativo": residente.estado_operativo,
+        }
 
-
-def obtener_residentes_no_validados(db: Session, torre: str = None, piso: int = None):
-    Torre = aliased(models.Torre)
-    Piso = aliased(models.Piso)
-    Apartamento = aliased(models.Apartamento)
-    Residente = aliased(models.Residente)
-
-    query = (
-        db.query(
-            Residente.id,
-            Residente.nombre,
-            Residente.cedula,
-            Residente.correo,
-            Residente.telefono,
-            Residente.tipo_residente,
-            Residente.fecha_registro,
-            Torre.nombre.label("torre"),
-            Piso.numero.label("piso"),
-            Apartamento.numero.label("apartamento"),
-        )
-        .join(Apartamento, Residente.id_apartamento == Apartamento.id)
-        .join(Piso, Apartamento.id_piso == Piso.id)
-        .join(Torre, Piso.id_torre == Torre.id)
-        .filter(Residente.estado_aprobacion == "Pendiente")
-    )
-
-    if torre:
-        query = query.filter(func.lower(Torre.nombre) == torre.lower())
-    if piso:
-        query = query.filter(Piso.numero == piso)
-
-    resultados = query.order_by(Residente.fecha_registro.asc()).all()
-
-    return [
-        schemas.ResidentePendienteOut(
-            id=r.id,
-            nombre=r.nombre,
-            cedula=r.cedula,
-            correo=r.correo,
-            telefono=r.telefono,
-            tipo_residente=r.tipo_residente,
-            fecha_registro=r.fecha_registro,
-            torre=r.torre,
-            piso=r.piso,
-            apartamento=r.apartamento,
-        )
-        for r in resultados
-    ]
-
-
-def obtener_residentes_por_torre(db: Session, nombre_torre: str):
-    return (
-        db.query(models.Residente)
-        .join(models.Apartamento, models.Residente.id_apartamento == models.Apartamento.id)
-        .join(models.Piso, models.Apartamento.id_piso == models.Piso.id)
-        .join(models.Torre, models.Piso.id_torre == models.Torre.id)
-        .filter(func.lower(models.Torre.nombre) == nombre_torre.lower())
-        .order_by(models.Residente.nombre.asc())
-        .all()
-    )
-
-
-def obtener_residente_asociado(db: Session, id_usuario: int):
-    residente = db.query(models.Residente).filter(models.Residente.id_usuario == id_usuario).first()
-
-    if not residente:
-        raise HTTPException(status_code=404, detail="No se encontró un residente asociado a este usuario.")
-
-    return residente
-
-
-def buscar_residente(db: Session, termino: str):
-    termino = f"%{termino.lower()}%"
-    return (
-        db.query(models.Residente)
-        .filter(
-            func.lower(models.Residente.nombre).like(termino)
-            | func.lower(models.Residente.cedula).like(termino)
-            | func.lower(models.Residente.correo).like(termino)
-        )
-        .order_by(models.Residente.nombre.asc())
-        .all()
-    )
-
-
-def contar_residentes(db: Session, solo_activos: bool = True):
-    query = db.query(func.count(models.Residente.id))
-    if solo_activos:
-        query = query.filter(models.Residente.estado_operativo == "Activo")
-    return query.scalar()
-
-
-def obtener_historial_residentes_por_apartamento(db: Session, id_apartamento: int):
-    return (
-        db.query(models.Residente)
-        .filter(models.Residente.id_apartamento == id_apartamento)
-        .order_by(models.Residente.fecha_registro.asc())
-        .all()
-    )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al activar residente: {str(e)}")
 
 
 def reasignar_apartamento_pendiente(
@@ -621,11 +833,24 @@ def reasignar_apartamento_pendiente(
     """Reasigna apartamento a un residente pendiente de validación"""
     residente = get_residente_or_404(db, id_residente)
 
-    if residente.estado_aprobacion == "Aprobado":
-        raise HTTPException(status_code=400, detail="No se puede reasignar apartamento a residente ya validado")
+    if residente.estado_aprobacion not in ["Pendiente", "Corrección Requerida"]:
+        raise HTTPException(
+            status_code=400, detail="Solo se puede reasignar apartamento a residentes pendientes o en corrección"
+        )
 
     # Guardar estado previo para auditoría
     residente_previo = {c.name: getattr(residente, c.name) for c in residente.__table__.columns}
+    apartamento_anterior_previo = None
+    apartamento_anterior = None
+
+    if residente.id_apartamento:
+        apartamento_anterior = (
+            db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
+        )
+        if apartamento_anterior:
+            apartamento_anterior_previo = {
+                c.name: getattr(apartamento_anterior, c.name) for c in apartamento_anterior.__table__.columns
+            }
 
     # Buscar nuevo apartamento
     torre_obj = db.query(models.Torre).filter(func.lower(models.Torre.nombre) == torre.lower()).first()
@@ -648,35 +873,183 @@ def reasignar_apartamento_pendiente(
     if not nuevo_apartamento:
         raise HTTPException(status_code=404, detail=f"Apartamento {numero_apartamento} no encontrado")
 
-    # Liberar apartamento anterior si existe
-    if residente.id_apartamento:
-        apartamento_anterior = (
-            db.query(models.Apartamento).filter(models.Apartamento.id == residente.id_apartamento).first()
+    residente_existente = (
+        db.query(models.Residente)
+        .filter(
+            models.Residente.id_apartamento == nuevo_apartamento.id,
+            models.Residente.estado_aprobacion.in_(["Pendiente", "Corrección Requerida", "Aprobado"]),
+            models.Residente.id != id_residente,  # ✅ Excluir al residente actual
         )
+        .first()
+    )
+
+    if residente_existente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El nuevo apartamento ya tiene un residente asignado: {residente_existente.nombre}",
+        )
+
+    try:
         if apartamento_anterior:
             apartamento_anterior.estado = "Disponible"
+            if hasattr(apartamento_anterior, "id_residente"):
+                apartamento_anterior.id_residente = None
 
-    # Asignar nuevo apartamento
-    if nuevo_apartamento.estado.lower() == "ocupado":
-        raise HTTPException(status_code=400, detail="El nuevo apartamento ya está ocupado")
+        residente.id_apartamento = nuevo_apartamento.id
 
-    residente.id_apartamento = nuevo_apartamento.id
-    db.commit()
+        db.commit()
+        db.refresh(residente)
+        if apartamento_anterior:
+            db.refresh(apartamento_anterior)
 
-    # Reasignación de apartamento
-    if usuario_actual:
-        registrar_auditoria(
-            db=db,
-            usuario_id=usuario_actual.id,
-            usuario_nombre=usuario_actual.nombre,
-            accion="Reasignación de apartamento a residente pendiente",
-            tabla="residentes",
-            objeto_previo=residente_previo,
-            objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
-            request=request,
+        if usuario_actual:
+            # Auditoría para residente
+            registrar_auditoria(
+                db=db,
+                usuario_id=usuario_actual.id,
+                usuario_nombre=usuario_actual.nombre,
+                accion=f"Reasignación de apartamento: {apartamento_anterior.numero if apartamento_anterior else 'Sin asignar'} → {nuevo_apartamento.numero}",
+                tabla="residentes",
+                objeto_previo=residente_previo,
+                objeto_nuevo={c.name: getattr(residente, c.name) for c in residente.__table__.columns},
+                request=request,
+            )
+
+            if apartamento_anterior_previo and apartamento_anterior:
+                registrar_auditoria(
+                    db=db,
+                    usuario_id=usuario_actual.id,
+                    usuario_nombre=usuario_actual.nombre,
+                    accion="Liberación de apartamento por reasignación",
+                    tabla="apartamentos",
+                    objeto_previo=apartamento_anterior_previo,
+                    objeto_nuevo={
+                        c.name: getattr(apartamento_anterior, c.name) for c in apartamento_anterior.__table__.columns
+                    },
+                    request=request,
+                )
+
+        return {
+            "mensaje": f"Residente {residente.nombre} reasignado al apartamento {nuevo_apartamento.numero}",
+            "apartamento_anterior": apartamento_anterior.numero if apartamento_anterior else None,
+            "apartamento_nuevo": nuevo_apartamento.numero,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al reasignar apartamento: {str(e)}")
+
+
+def obtener_residentes(db: Session):
+    return db.query(models.Residente).order_by(models.Residente.id.asc()).all()
+
+
+def obtener_residente_por_id(db: Session, id_residente: int):
+    residente = get_residente_or_404(db, id_residente)
+    return residente
+
+
+def obtener_residente_asociado(db: Session, id_usuario: int):
+    residente = db.query(models.Residente).filter(models.Residente.id_usuario == id_usuario).first()
+
+    if not residente:
+        raise HTTPException(status_code=404, detail="No se encontró un residente asociado a este usuario.")
+
+    return residente
+
+
+def obtener_residentes_no_validados(db: Session, torre: str = None, piso: int = None):
+    query = (
+        db.query(
+            models.Residente.id,
+            models.Residente.nombre,
+            models.Residente.cedula,
+            models.Residente.correo,
+            models.Residente.telefono,
+            models.Residente.tipo_residente,
+            models.Residente.fecha_registro,
+            models.Residente.estado_aprobacion,
+            models.Torre.nombre.label("torre"),
+            models.Piso.numero.label("piso"),
+            models.Apartamento.numero.label("apartamento"),
         )
+        .join(models.Apartamento, models.Residente.id_apartamento == models.Apartamento.id)
+        .join(models.Piso, models.Apartamento.id_piso == models.Piso.id)
+        .join(models.Torre, models.Piso.id_torre == models.Torre.id)
+        .filter(models.Residente.estado_aprobacion.in_(["Pendiente", "Corrección Requerida"]))
+    )
 
-    return {"mensaje": f"Residente {residente.nombre} reasignado al apartamento {numero_apartamento}"}
+    if torre:
+        query = query.filter(func.lower(models.Torre.nombre) == torre.lower())
+    if piso:
+        query = query.filter(models.Piso.numero == piso)
+
+    resultados = query.order_by(models.Residente.fecha_registro.asc()).all()
+
+    return [
+        schemas.ResidentePendienteOut(
+            id=r.id,
+            nombre=r.nombre,
+            cedula=r.cedula,
+            correo=r.correo,
+            telefono=r.telefono,
+            tipo_residente=r.tipo_residente,
+            fecha_registro=r.fecha_registro,
+            estado_aprobacion=r.estado_aprobacion,
+            torre=r.torre,
+            piso=r.piso,
+            apartamento=r.apartamento,
+        )
+        for r in resultados
+    ]
+
+
+def obtener_residentes_por_torre(db: Session, nombre_torre: str, skip: int = 0, limit: int = 100):
+    return (
+        db.query(models.Residente)
+        .join(models.Apartamento, models.Residente.id_apartamento == models.Apartamento.id)
+        .join(models.Piso, models.Apartamento.id_piso == models.Piso.id)
+        .join(models.Torre, models.Piso.id_torre == models.Torre.id)
+        .filter(func.lower(models.Torre.nombre) == nombre_torre.lower())
+        .order_by(models.Residente.nombre.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def buscar_residente(db: Session, termino: str, limite: int = 50):
+    termino_busqueda = f"%{termino}%"
+    return (
+        db.query(models.Residente)
+        .filter(
+            models.Residente.nombre.ilike(termino_busqueda)
+            | models.Residente.cedula.ilike(termino_busqueda)
+            | models.Residente.correo.ilike(termino_busqueda)
+        )
+        .order_by(models.Residente.nombre.asc())
+        .limit(limite)
+        .all()
+    )
+
+
+def contar_residentes(db: Session, solo_activos: bool = True):
+    query = db.query(func.count(models.Residente.id))
+    if solo_activos:
+        query = query.filter(models.Residente.estado_operativo == "Activo")
+    return query.scalar()
+
+
+def obtener_historial_residentes_por_apartamento(db: Session, id_apartamento: int):
+    return (
+        db.query(models.Residente)
+        .join(models.Apartamento, models.Residente.id_apartamento == models.Apartamento.id)
+        .join(models.Piso, models.Apartamento.id_piso == models.Piso.id)
+        .join(models.Torre, models.Piso.id_torre == models.Torre.id)
+        .filter(models.Residente.id_apartamento == id_apartamento)
+        .order_by(models.Residente.fecha_registro.desc())
+        .all()
+    )
 
 
 def estadisticas_residentes(db: Session):
@@ -729,15 +1102,15 @@ def busqueda_avanzada(
     torre: Optional[str] = None,
     tipo_residente: Optional[str] = None,
     estado_operativo: Optional[str] = None,
-    estado_aprobacion: Optional[bool] = None,
+    estado_aprobacion: Optional[str] = None,
 ):
     # Búsqueda avanzada de residentes con múltiples filtros
     query = db.query(models.Residente)
 
     if nombre:
-        query = query.filter(func.lower(models.Residente.nombre).like(f"%{nombre.lower()}%"))
+        query = query.filter(models.Residente.nombre.ilike(f"%{nombre}%"))
     if cedula:
-        query = query.filter(func.lower(models.Residente.cedula).like(f"%{cedula.lower()}%"))
+        query = query.filter(models.Residente.cedula.ilike(f"%{cedula}%"))
     if tipo_residente:
         query = query.filter(models.Residente.tipo_residente == tipo_residente)
     if estado_operativo:

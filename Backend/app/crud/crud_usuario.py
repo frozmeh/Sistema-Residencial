@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 from sqlalchemy import func
 from .. import models, schemas
 from ..core.security import encriptar_contrasena
@@ -49,11 +49,18 @@ def crear_usuario(
 
 
 def obtener_usuarios(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Usuario).offset(skip).limit(limit).all()
+    return db.query(models.Usuario).order_by(models.Usuario.id.asc()).offset(skip).limit(limit).all()
 
 
 def listar_usuarios_activos(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Usuario).filter(models.Usuario.estado == "Activo").offset(skip).limit(limit).all()
+    return (
+        db.query(models.Usuario)
+        .filter(models.Usuario.estado == "Activo")
+        .order_by(models.Usuario.id.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 def buscar_usuarios(db: Session, q: str):
@@ -163,7 +170,7 @@ def cambiar_rol_usuario(db: Session, id_usuario: int, nuevo_id_rol: int, request
         objeto_nuevo={c.name: getattr(usuario, c.name) for c in usuario.__table__.columns},
         request=request,
     )
-    return {"mensaje": "Rol actualizado", "usuario": usuario}
+    return usuario
 
 
 def cambiar_estado_usuario(db: Session, id_usuario: int, nuevo_estado: str, request=None):
@@ -190,10 +197,7 @@ def cambiar_estado_usuario(db: Session, id_usuario: int, nuevo_estado: str, requ
         objeto_nuevo={c.name: getattr(usuario, c.name) for c in usuario.__table__.columns},
         request=request,
     )
-    return {
-        "mensaje": f"Estado de usuario {id_usuario} actualizado a '{nuevo_estado}' correctamente",
-        "usuario": usuario,
-    }
+    return usuario
 
 
 def cambiar_password(db: Session, id_usuario: int, nueva_password: str, request=None):
@@ -216,7 +220,4 @@ def cambiar_password(db: Session, id_usuario: int, nueva_password: str, request=
         campos_visibles=["nombre", "email", "password"],
         forzar=True,
     )
-    return {
-        "mensaje": f"Contraseña actualizada del usuario {usuario.nombre}",
-        "usuario": usuario,
-    }
+    return usuario

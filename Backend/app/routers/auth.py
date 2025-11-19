@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from .. import crud, schemas
@@ -11,33 +10,16 @@ from ..core.security import verificar_contrasena, crear_tokens, refresh_access_t
 router = APIRouter(prefix="/auth", tags=["Autenticación (Login / Registro)"])
 
 
-class Credenciales(BaseModel):
-    nombre_usuario: str
-    contrasena: str
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    refresh_token: str
-    usuario: dict
-
-
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
-
-
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=schemas.Token)
 def login(
-    credenciales: Credenciales,
+    credenciales: schemas.Credenciales,
     db: Session = Depends(get_db),
-    request: Request = None,  # Agregar request para obtener IP
+    request: Request = None,
 ):
-    # Buscar usuario por nombre
     usuario = (
         db.query(Usuario)
         .options(joinedload(Usuario.rol))
-        .filter(func.lower(Usuario.nombre) == credenciales.nombre_usuario.lower())
+        .filter(func.lower(Usuario.nombre) == credenciales.nombre.lower())
         .first()
     )
 
@@ -47,7 +29,7 @@ def login(
     if usuario.estado != "Activo":
         raise HTTPException(status_code=403, detail="Usuario inactivo o bloqueado")
 
-    if not verificar_contrasena(credenciales.contrasena, usuario.password):
+    if not verificar_contrasena(credenciales.password, usuario.password):
         raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
     usuario.ultima_sesion = func.now()
@@ -73,17 +55,15 @@ def login(
 
 
 @router.post("/refresh")
-def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
-    """Renueva el access token usando un refresh token"""
+def refresh_token(request: schemas.RefreshTokenRequest, db: Session = Depends(get_db)):
     return refresh_access_token(request.refresh_token, db)
 
 
-@router.post("/registro", response_model=schemas.UsuarioOut)
+@router.post("/registro", response_model=schemas.UsuarioResidenteOut)
 def registrar_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)):
     return crud.crear_usuario(db, usuario)
 
 
-@router.get("/me", response_model=schemas.UsuarioOut)
+@router.get("/me", response_model=schemas.UsuarioResidenteOut)
 def obtener_usuario_actual(usuario: Usuario = Depends(get_usuario_actual)):
-    """Obtener información del usuario actualmente autenticado"""
     return usuario

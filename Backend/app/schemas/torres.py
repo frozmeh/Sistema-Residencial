@@ -7,18 +7,11 @@ from typing import Optional, List, Literal
 # ================
 
 
-class TorreBase(BaseModel):
-    nombre: str
-
-
-class TorreCreate(TorreBase):
-    pass
-
-
-class TorreOut(TorreBase):
+class TorreOut(BaseModel):
     id: int
-    cantidad_pisos: Optional[int] = 0
-    cantidad_apartamentos: Optional[int] = 0
+    nombre: str
+    cantidad_pisos: int
+    cantidad_apartamentos: int
 
     class Config:
         from_attributes = True
@@ -29,14 +22,11 @@ class TorreOut(TorreBase):
 # ===============
 
 
-class PisoBase(BaseModel):
+class PisoOut(BaseModel):
+    id: int
     numero: int
     id_torre: int
     descripcion: Optional[str] = None
-
-
-class PisoOut(PisoBase):
-    id: int
     cantidad_apartamentos: Optional[int] = 0
 
     class Config:
@@ -48,16 +38,13 @@ class PisoOut(PisoBase):
 # ===============================
 
 
-class TipoApartamentoBase(BaseModel):
+class TipoApartamentoOut(BaseModel):
+    id: int
     nombre: str
     habitaciones: int
     banos: int
     descripcion: Optional[str] = None
     porcentaje_aporte: float
-
-
-class TipoApartamentoOut(TipoApartamentoBase):
-    id: int
 
     class Config:
         from_attributes = True
@@ -80,16 +67,13 @@ class ResidenteSimple(BaseModel):
 # ======================
 
 
-class ApartamentoBase(BaseModel):
+class ApartamentoOut(BaseModel):
+    id: int
     numero: str
     id_piso: int
     id_tipo_apartamento: int
     estado: Optional[Literal["Disponible", "Ocupado"]] = "Disponible"
-
-
-class ApartamentoOut(ApartamentoBase):
-    id: int
-    tipo_apartamento: TipoApartamentoOut = None
+    tipo_apartamento: Optional[TipoApartamentoOut] = None
     residente: Optional[ResidenteSimple] = None
 
     class Config:

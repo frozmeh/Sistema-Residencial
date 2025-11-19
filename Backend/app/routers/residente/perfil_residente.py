@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ... import models, schemas, crud
 from ...database import get_db
-from ...core.security import verificar_residente
+from ...core.security import verificar_residente, get_usuario_actual
 
 router = APIRouter(prefix="/residente", tags=["Residente - Perfil y Gestión"])
 
@@ -16,9 +16,20 @@ def registrar_residente(
     residente: schemas.ResidenteCreate,
     request: Request = None,
     db: Session = Depends(get_db),
-    usuario=Depends(verificar_residente),
+    usuario=Depends(get_usuario_actual),
 ):
-    return crud.crear_residente(db, residente, usuario.id, request=request)
+    residente_creado = crud.crear_residente(db, residente, usuario.id, request=request, usuario_actual=usuario)
+
+    residente_con_datos = (
+        db.query(models.Residente)
+        .options(
+            joinedload(models.Residente.apartamento).joinedload(models.Apartamento.piso).joinedload(models.Piso.torre)
+        )
+        .filter(models.Residente.id == residente_creado.id)
+        .first()
+    )
+
+    return residente_con_datos
 
 
 @router.get("/me", response_model=schemas.ResidenteOut)

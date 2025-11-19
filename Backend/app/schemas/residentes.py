@@ -43,8 +43,8 @@ class ResidenteUpdateAdmin(BaseModel):
     telefono: Optional[str] = Field(None, max_length=20)
     correo: Optional[EmailStr] = None
     tipo_residente: Optional[Literal["Propietario", "Inquilino"]] = None
-    estado: Optional[Literal["Activo", "Inactivo", "Suspendido"]] = None
-    validado: Optional[bool] = None
+    estado_operativo: Optional[Literal["Activo", "Inactivo", "Suspendido"]] = None
+    estado_aprobacion: Optional[Literal["Pendiente", "Aprobado", "Rechazado", "Corrección Requerida"]] = None
 
 
 class ResidenteUpdateResidente(BaseModel):
@@ -67,7 +67,33 @@ class ApartamentoBase(BaseModel):
         from_attributes = True
 
 
-class ResidenteOut(BaseModel):
+class PisoBase(BaseModel):
+    id: int
+    numero: int
+    torre: Optional["TorreBase"] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TorreBase(BaseModel):
+    id: int
+    nombre: str
+
+    class Config:
+        from_attributes = True
+
+
+class ApartamentoBase(BaseModel):
+    id: int
+    numero: str
+    piso: Optional[PisoBase] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ResidenteOutBase(BaseModel):
     id: int
     nombre: str
     cedula: str
@@ -75,11 +101,12 @@ class ResidenteOut(BaseModel):
     telefono: Optional[str]
     tipo_residente: str
     fecha_registro: date
-    estado: str
-    validado: bool
-    residente_actual: bool
+    estado_aprobacion: str
+    estado_operativo: str
 
-    # Datos relacionados
+
+class ResidenteOut(ResidenteOutBase):
+    reside_actualmente: bool
     usuario: Optional[UsuarioBase] = None
     apartamento: Optional[ApartamentoBase] = None
 
@@ -87,30 +114,7 @@ class ResidenteOut(BaseModel):
         from_attributes = True
 
 
-class ResidentePendienteOut(BaseModel):
-    id: int
-    nombre: str
-    cedula: str
-    correo: Optional[EmailStr]
-    telefono: Optional[str]
-    tipo_residente: str
-    fecha_registro: date
-    torre: str
-    piso: int
-    apartamento: str
-
-    class Config:
-        from_attributes = True
-
-
-class ResidenteValidadoOut(BaseModel):
-    id: int
-    nombre: str
-    cedula: str
-    correo: Optional[EmailStr]
-    telefono: Optional[str]
-    tipo_residente: str
-    fecha_registro: date
+class ResidentePendienteOut(ResidenteOutBase):
     torre: str
     piso: int
     apartamento: str

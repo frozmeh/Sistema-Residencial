@@ -41,14 +41,13 @@ def obtener_apartamentos_desde_pisos_torres(
 def calcular_montos(
     monto_usd: Optional[Decimal],
     monto_bs: Optional[Decimal],
-    tasa_bcv: Decimal,
     fecha: date,
     usar_tasa_historica: bool = True,
 ):
     """
     Calcula y devuelve ambos montos (USD y Bs) usando la tasa BCV actual.
     """
-
+    ###
     if monto_usd is None and monto_bs is None:
         raise HTTPException(status_code=400, detail="Debe proporcionar monto en USD o Bs")
 
@@ -141,10 +140,10 @@ def crear_gasto_fijo(db: Session, gasto: schemas.GastoFijoCreate, usuario_actual
     """
     Crea un gasto fijo, ya sea para un apartamento específico o distribuido entre todos.
     """
-    fecha_gasto = gasto.fecha_creacion or date.today()
-    monto_usd, monto_bs, tasa_bcv, fecha_tasa = calcular_montos(
-        gasto.monto_usd, gasto.monto_bs, fecha_gasto, usar_tasa_historica=True
-    )
+    monto_usd = Decimal(str(gasto.monto_usd))  # Ya viene calculado del schema
+    monto_bs = Decimal(str(gasto.monto_bs))  # Ya viene calculado del schema
+    tasa_bcv = Decimal(str(gasto.tasa_cambio))  # Ya viene calculado del schema
+    fecha_tasa = gasto.fecha_tasa_bcv
 
     # Caso 1: Gasto asociado a un solo apartamento
     if gasto.id_apartamento:
@@ -344,8 +343,10 @@ def procesar_gasto_variable(
     """
     Función central para crear o actualizar un gasto variable
     """
-    tasa_bcv, fecha_tasa = obtener_tasa_bcv()
-    monto_usd, monto_bs = calcular_montos(gasto_datos.monto_usd, gasto_datos.monto_bs, tasa_bcv)
+    monto_usd = Decimal(str(gasto_datos.monto_usd))
+    monto_bs = Decimal(str(gasto_datos.monto_bs))
+    tasa_bcv = Decimal(str(gasto_datos.tasa_cambio))
+    fecha_tasa = gasto_datos.fecha_tasa_bcv
 
     # Obtener apartamentos desde pisos y torres
     apartamentos_ids = set(gasto_datos.id_apartamentos or [])

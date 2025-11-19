@@ -12,7 +12,7 @@ class Usuario(Base):
     __tablename__ = "usuarios"
 
     id = Column(Integer, primary_key=True, index=True)
-    id_rol = Column(Integer, ForeignKey("roles.id", ondelete="RESTRICT"))
+    id_rol = Column(Integer, ForeignKey("roles.id", ondelete="RESTRICT"), default=2)
 
     nombre = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)

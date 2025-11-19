@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 from ... import schemas, crud
@@ -17,35 +17,56 @@ def listar_residentes(skip: int = 0, limit: int = 100, db: Session = Depends(get
     return crud.obtener_residentes(db)[skip : skip + limit]
 
 
-@router.get("/{id_residente}", response_model=schemas.ResidenteOut)
+@router.get("/id/{id_residente}", response_model=schemas.ResidenteOut)
 def obtener_residente(id_residente: int, db: Session = Depends(get_db), admin=Depends(verificar_admin)):
     """Obtener un residente específico por ID"""
     return crud.obtener_residente_por_id(db, id_residente)
 
 
-@router.get("/pendientes")
+@router.get("/pendientes", response_model=list[schemas.ResidentePendienteOut])
 def listar_pendientes(
     torre: str | None = None, piso: int | None = None, db: Session = Depends(get_db), admin=Depends(verificar_admin)
 ):
     return crud.obtener_residentes_no_validados(db, torre, piso)
 
 
-@router.put("/aprobar/{id_residente}")
+@router.put("/aprobar/{id_residente}", response_model=schemas.ResidenteOut)
 def aprobar_residente(
     id_residente: int, request: Request = None, db: Session = Depends(get_db), admin=Depends(verificar_admin)
 ):
     return crud.aprobar_residente(db, id_residente, usuario_actual=admin, request=request)
 
 
-@router.put("/rechazar/{id_residente}")
-def rechazar_residente(
+@router.put("/solicitar-correccion/{id_residente}", response_model=schemas.ResidenteOut)
+def solicitar_correccion_residente(
     id_residente: int,
-    motivo: str = "Registro rechazado por el administrador.",
+    motivo: str = "Se requiere corrección de datos.",
     request: Request = None,
     db: Session = Depends(get_db),
     admin=Depends(verificar_admin),
 ):
-    return crud.rechazar_residente(db, id_residente, motivo, usuario_actual=admin, request=request)
+    return crud.solicitar_correccion_residente(db, id_residente, motivo, usuario_actual=admin, request=request)
+
+
+@router.put("/rechazar-permanentemente/{id_residente}", response_model=schemas.ResidenteOut)
+def rechazar_residente_permanentemente(
+    id_residente: int,
+    motivo: str = "Registro rechazado permanentemente.",
+    request: Request = None,
+    db: Session = Depends(get_db),
+    admin=Depends(verificar_admin),
+):
+    return crud.rechazar_residente_permanentemente(db, id_residente, motivo, usuario_actual=admin, request=request)
+
+
+@router.put("/reenviar-aprobacion/{id_residente}", response_model=schemas.ResidenteOut)
+def reenviar_para_aprobacion(
+    id_residente: int,
+    request: Request = None,
+    db: Session = Depends(get_db),
+    admin=Depends(verificar_admin),
+):
+    return crud.reenviar_para_aprobacion(db, id_residente, usuario_actual=admin, request=request)
 
 
 @router.put("/{id_residente}/suspender")
