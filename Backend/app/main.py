@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from .database import engine, Base, SessionLocal
 from .routers import (
     auth,
+    financiero,
     # incidencias,
     # reservas,
     # notificaciones,,
@@ -13,15 +14,21 @@ from .routers.admin import (
     torres,
     usuarios as admin_usuarios,
     residentes as admin_residentes,
-    gastos as admin_gastos,
-    pagos as admin_pagos,
+    # gastos as admin_gastos,
+    # pagos as admin_pagos,
 )
 from .routers.residente import (
     perfil_usuario,
     perfil_residente,
-    gastos_apartamento as residente_gastos,
-    pagos_residente as residente_pagos,
+    # gastos_apartamento as residente_gastos,
+    # pagos_residente as residente_pagos,
 )
+from .routers.services import (
+    distribucion_service,
+    gastos_service,
+    cargos_service,
+    pagos_service,
+)  # test_gastos_service
 from . import initial_data
 
 # from . import initial_data
@@ -56,10 +63,16 @@ app.include_router(perfil_usuario.router)
 app.include_router(admin_residentes.router)
 app.include_router(perfil_residente.router)
 app.include_router(torres.router)
-app.include_router(admin_gastos.router)
-app.include_router(residente_gastos.router)
-app.include_router(admin_pagos.router)
-app.include_router(residente_pagos.router)
+app.include_router(financiero.router)
+app.include_router(distribucion_service.router)
+app.include_router(gastos_service.router)
+app.include_router(cargos_service.router)
+app.include_router(pagos_service.router)
+# app.include_router(test_gastos_service.router)
+# app.include_router(admin_gastos.router)
+# app.include_router(residente_gastos.router)
+# app.include_router(admin_pagos.router)
+# app.include_router(residente_pagos.router)
 # app.include_router(incidencias.router)
 # app.include_router(reservas.router)
 # app.include_router(notificaciones.router)

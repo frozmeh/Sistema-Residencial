@@ -1,7 +1,10 @@
+# schemas/financiero.py - ACTUALIZA tu schema Pago
 from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, Literal
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, date
+from ..schemas.torres import ApartamentoOut
+from ..schemas.financiero import CargoResponse, GastoResponse
 
 # ----- Literales -----
 EstadoPago = Literal["Pendiente", "Validado", "Rechazado"]
@@ -9,8 +12,28 @@ MonedaPago = Literal["USD", "VES"]
 MetodoPago = Literal["Transferencia", "Efectivo", "Pago Móvil"]
 
 
+class PagoCargoCreate(BaseModel):
+    """Schema para pagos de cargos - CON SOPORTE PARA USD Y VES"""
+
+    id_cargo: int
+    id_residente: int
+    monto_pagado: Decimal  # ← Monto en la moneda que elija el usuario
+    moneda_pago: Literal["USD", "VES"]  # ← Moneda en la que pagó el usuario
+    metodo_pago: str
+    referencia: Optional[str] = None
+    comprobante_url: Optional[str] = None
+    fecha_pago: date
+    concepto: str
+
+    @field_validator("monto_pagado")
+    def monto_positivo(cls, v):
+        if v <= 0:
+            raise ValueError("El monto debe ser mayor a 0")
+        return v
+
+
 # ====================
-# ---- Esquemas ----
+# ---- Esquemas EXISTENTES (modificados) ----
 # ====================
 
 
@@ -26,10 +49,10 @@ class PagoBase(BaseModel):
     verificado: Optional[bool] = False
     id_apartamento: Optional[int] = None
     id_reporte_financiero: Optional[int] = None
-    id_gasto_fijo: Optional[int] = None
-    id_gasto_variable: Optional[int] = None
+    id_gasto: Optional[int] = None  # 🆕 Cambiar de id_gasto_fijo/id_gasto_variable a id_gasto
+    id_cargo: Optional[int] = None  # 🆕 NUEVO campo para el flujo de cargos
 
-    # ----- Validaciones -----
+    # ----- Validaciones ACTUALIZADAS -----
 
     @field_validator("monto")
     def monto_positivo(cls, v):
@@ -49,8 +72,6 @@ class PagoBase(BaseModel):
 
     @field_validator("fecha_pago")
     def fecha_valida(cls, v):
-        from datetime import datetime
-
         if v is not None and v > datetime.now():
             raise ValueError("La fecha de pago no puede ser futura")
         return v
@@ -61,13 +82,6 @@ class PagoBase(BaseModel):
         if metodo == "Transferencia" and not v:
             raise ValueError("Comprobante requerido para pagos por transferencia")
         return v
-
-    @model_validator(mode="after")
-    def validar_gastos(cls, values):
-        # Validar que no se asignen ambos tipos de gasto
-        if values.id_gasto_fijo and values.id_gasto_variable:
-            raise ValueError("No se puede asignar tanto gasto fijo como variable al mismo pago")
-        return values
 
 
 # ==============================
@@ -98,6 +112,11 @@ class PagoOut(PagoBase):
     id_residente: int
     fecha_creacion: Optional[datetime] = None
     fecha_actualizacion: Optional[datetime] = None
+    # 🆕 AGREGAR relaciones para respuesta completa
+    residente: Optional["ResidenteSimple"] = None
+    cargo: Optional["CargoResponse"] = None
+    apartamento: Optional["ApartamentoOut"] = None
+    gasto: Optional["GastoResponse"] = None
 
     class Config:
         from_attributes = True
@@ -111,3 +130,27 @@ class PagoOut(PagoBase):
 class PagoValidacion(BaseModel):
     estado: EstadoPago
     verificado: bool = True
+
+
+# ==============================
+# ---- SCHEMAS ADICIONALES ----
+# ==============================
+
+
+class ValidarPagoRequest(BaseModel):
+    """Para que el administrador valide un pago"""
+
+    accion: str  # "completo", "parcial", "rechazado"
+    observaciones: Optional[str] = None
+
+
+class ResidenteSimple(BaseModel):
+    """Schema simple para residente en respuestas"""
+
+    id: int
+    nombre: str
+    cedula: str
+    tipo_residente: str
+
+    class Config:
+        from_attributes = True

@@ -5,13 +5,13 @@ from ..database import Base
 # ======================
 # ---- Gastos Fijos ----
 # ======================
-
+"""
 
 class GastoFijo(Base):
     __tablename__ = "gastos_fijos"
 
     id = Column(Integer, primary_key=True, index=True)
-    id_reporte_financiero = Column(Integer, ForeignKey("reportes_financieros.id", ondelete="CASCADE"))
+    # id_reporte_financiero = Column(Integer, ForeignKey("reportes_financieros.id", ondelete="CASCADE"))
     id_apartamento = Column(Integer, ForeignKey("apartamentos.id", ondelete="SET NULL"))
 
     tipo_gasto = Column(String, nullable=False, index=True)
@@ -28,7 +28,7 @@ class GastoFijo(Base):
     fecha_tasa_bcv = Column(DateTime, nullable=True)
 
     # Relaciones
-    reporte_financiero = relationship("ReporteFinanciero", back_populates="gastos_fijos")
+    # reporte_financiero = relationship("ReporteFinanciero", back_populates="gastos_fijos")
     apartamento = relationship("Apartamento", back_populates="gastos_fijos")
     pagos = relationship("Pago", back_populates="gasto_fijo")
 
@@ -70,7 +70,7 @@ class GastoVariable(Base):
     __tablename__ = "gastos_variables"
 
     id = Column(Integer, primary_key=True, index=True)
-    id_reporte_financiero = Column(Integer, ForeignKey("reportes_financieros.id", ondelete="CASCADE"))
+    # id_reporte_financiero = Column(Integer, ForeignKey("reportes_financieros.id", ondelete="CASCADE"))
     id_residente = Column(Integer, ForeignKey("residentes.id", ondelete="SET NULL"), nullable=True)
 
     tipo_gasto = Column(String, nullable=False, index=True)
@@ -87,7 +87,7 @@ class GastoVariable(Base):
     fecha_tasa_bcv = Column(DateTime, nullable=True)
 
     # Relaciones
-    reporte_financiero = relationship("ReporteFinanciero", back_populates="gastos_variables")
+    # reporte_financiero = relationship("ReporteFinanciero", back_populates="gastos_variables")
     residente = relationship("Residente", back_populates="gastos_variables")
     pagos = relationship("Pago", back_populates="gasto_variable")
     apartamentos = relationship(
@@ -111,5 +111,6 @@ class GastoVariable(Base):
 @event.listens_for(GastoFijo.monto_pagado, "set")
 @event.listens_for(GastoVariable.monto_pagado, "set")
 def recibir_set_monto_pagado(target, value, oldvalue, initiator):
-    """Actualiza automáticamente el saldo pendiente cuando cambia monto_pagado"""
-    target.actualizar_saldo()
+"""
+"""Actualiza automáticamente el saldo pendiente cuando cambia monto_pagado"""
+# target.actualizar_saldo()

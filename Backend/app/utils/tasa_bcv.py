@@ -23,7 +23,7 @@ def obtener_tasa_bcv(cache_duracion_horas: int = 12) -> tuple[Decimal, datetime]
         return _cache_tasa["valor"], _cache_tasa["ultima_actualizacion"]
 
     try:
-        url = "https://dolarapi.com/v1/dolares/oficial"
+        url = "https://ve.dolarapi.com/v1/dolares/oficial"
         resp = requests.get(url, timeout=5)
         data = resp.json()
         tasa = Decimal(str(data["promedio"]))

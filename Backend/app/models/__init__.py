@@ -3,7 +3,9 @@ from .roles import *
 from .residentes import *
 from .torres import *
 from .pagos import *
-from .gastos import *
+from .financiero import *
+
+# from .gastos import *
 from .incidencias import *
 from .reservas import *
 from .notificaciones import *

@@ -4,7 +4,8 @@ from .crud_residente import *
 from .crud_auth import *
 from .crud_torres import *
 from .crud_pagos import *
-from .crud_gastos import *
+
+# from .crud_gastos import *
 from .crud_incidencias import *
 from .crud_reservas import *
 from .crud_notificaciones import *

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DECIMAL, Enum, ForeignKey
 from ..database import Base
-from ..models.gastos import gastos_variables_apartamentos
+
+# from ..models.gastos import gastos_variables_apartamentos
 from sqlalchemy.orm import relationship
 
 
@@ -60,10 +61,12 @@ class Apartamento(Base):
     # historial = relationship("HistorialApartamento", back_populates="apartamento", cascade="all, delete-orphan")
     residente = relationship("Residente", back_populates="apartamento", uselist=False)
     pagos = relationship("Pago", back_populates="apartamento", cascade="all, delete-orphan")
-    gastos_fijos = relationship("GastoFijo", back_populates="apartamento")
+    """gastos_fijos = relationship("GastoFijo", back_populates="apartamento")
     gastos_variables = relationship(
         "GastoVariable", secondary=gastos_variables_apartamentos, back_populates="apartamentos"
-    )
+    )"""
+    cargos = relationship("Cargo", back_populates="apartamento", cascade="all, delete-orphan")
+    distribuciones_gasto = relationship("DistribucionGasto", back_populates="apartamento")
 
 
 # ===============================

@@ -45,5 +45,5 @@ class Residente(Base):
     pagos = relationship("Pago", back_populates="residente", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="residente", cascade="all, delete-orphan")
     reservas = relationship("Reserva", back_populates="residente", cascade="all, delete-orphan")
-    gastos_variables = relationship("GastoVariable", back_populates="residente")
+    # gastos_variables = relationship("GastoVariable", back_populates="residente")
     # historiales = relationship("HistorialApartamento", back_populates="residente", cascade="all, delete-orphan")
