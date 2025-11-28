@@ -109,6 +109,8 @@ class PagosService:
                 estado=EstadoPagoEnum.PENDIENTE,
                 verificado=False,
                 fecha_creacion=datetime.now(),
+                saldo_pendiente_al_pagar_usd=cargo.saldo_pendiente_usd,
+                saldo_pendiente_al_pagar_ves=cargo.saldo_pendiente_ves,
             )
 
             db.add(pago)
@@ -169,7 +171,8 @@ class PagosService:
 
     def validar_pago_administrador(self, db: Session, pago_id: int, admin_id: int, datos: ValidarPagoRequest) -> Pago:
         """
-        Valida o rechaza un pago por parte del administrador - AJUSTADO
+        Valida o rechaza un pago por parte del administrador - VERSIÓN MEJORADA
+        El SISTEMA decide automáticamente si es pago completo o parcial
         """
         try:
             pago = (
@@ -185,30 +188,31 @@ class PagosService:
             if pago.estado != EstadoPagoEnum.PENDIENTE:
                 raise ValueError(f"Pago {pago_id} ya fue procesado (estado: {pago.estado})")
 
-            # En tu modelo actual no tienes campo "validado_por", usaremos observaciones temporalmente
-            # O podrías agregar el campo si lo necesitas
-
-            if datos.accion == "completo":
-                pago.estado = EstadoPagoEnum.VALIDADO
+            # 🎯 NUEVA LÓGICA: Sistema decide automáticamente
+            if datos.accion == "aprobar":
                 pago.verificado = True
-                # pago.validado_por = f"Admin_{admin_id}"  # Si agregas este campo
-                # pago.fecha_validacion = datetime.now()
-                pago.comprobante = pago.comprobante or "Validado sin comprobante"
-
-                logger.info(f"✅ Pago {pago_id} validado COMPLETAMENTE por admin {admin_id}")
-
-            elif datos.accion == "parcial":
-                # En tu Enum no tienes "Parcial", manejaremos como Validado pero con observaciones
                 pago.estado = EstadoPagoEnum.VALIDADO
-                pago.verificado = True
-                pago.comprobante = f"Pago parcial - {datos.observaciones or 'Sin observaciones'}"
+                saldo_historico = pago.saldo_pendiente_al_pagar_usd or pago.cargo.saldo_pendiente_usd
 
-                logger.info(f"🟡 Pago {pago_id} validado PARCIALMENTE por admin {admin_id}")
+                # Sistema decide si es COMPLETO o PARCIAL
+                if pago.cargo:
+                    if pago.monto_pagado_usd >= saldo_historico:
+                        # ✅ PAGO COMPLETO
+                        pago.comprobante = f"✅ COMPLETO - {pago.comprobante or 'Sin comprobante'} - {datos.observaciones or 'Validado'}"
+                        logger.info(f"✅ Pago {pago_id} validado como COMPLETO")
+                    else:
+                        # 🟡 PAGO PARCIAL
+                        pago.comprobante = f"🟡 PARCIAL - {pago.comprobante or 'Sin comprobante'} - {datos.observaciones or 'Pagó menos del total'}"
+                        logger.info(f"🟡 Pago {pago_id} validado como PARCIAL")
+                else:
+                    pago.comprobante = f"✅ VALIDADO - {pago.comprobante or 'Sin comprobante'}"
+                    logger.info(f"✅ Pago {pago_id} validado")
 
             elif datos.accion == "rechazado":
+                # ❌ RECHAZADO
                 pago.estado = EstadoPagoEnum.RECHAZADO
                 pago.verificado = False
-                pago.comprobante = f"Rechazado - {datos.observaciones or 'Sin observaciones'}"
+                pago.comprobante = f"❌ RECHAZADO - {datos.observaciones or 'Pago rechazado'}"
 
                 # Revertir el pago en el cargo (saldos pendientes)
                 if pago.cargo:

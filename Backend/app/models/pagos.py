@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum,
     Index,
     func,
+    Numeric,
 )
 from sqlalchemy.orm import relationship
 from ..database import Base
@@ -60,6 +61,8 @@ class Pago(Base):
     monto = Column(DECIMAL(12, 2), nullable=True)  # Hacer opcional durante transición
     moneda = Column(Enum(MonedaEnum), nullable=True)  # Hacer opcional
     tipo_cambio_bcv = Column(DECIMAL(12, 2), nullable=True)  # Mantener
+    saldo_pendiente_al_pagar_usd = Column(Numeric(12, 2), nullable=True)
+    saldo_pendiente_al_pagar_ves = Column(Numeric(15, 2), nullable=True)
 
     concepto = Column(String(100), nullable=False)
     metodo = Column(Enum(MetodoPagoEnum), nullable=False)

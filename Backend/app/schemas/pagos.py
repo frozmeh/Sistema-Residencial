@@ -140,7 +140,7 @@ class PagoValidacion(BaseModel):
 class ValidarPagoRequest(BaseModel):
     """Para que el administrador valide un pago"""
 
-    accion: str  # "completo", "parcial", "rechazado"
+    accion: Literal["aprobar", "rechazado"]
     observaciones: Optional[str] = None
 
 
